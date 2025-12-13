@@ -11,6 +11,7 @@ import 'blocs/report/report_cubit.dart';
 import 'blocs/sales/sales_cubit.dart';
 import 'blocs/document/document_cubit.dart';
 import 'blocs/accounting/accounting_cubit.dart';
+import 'blocs/theme/theme_cubit.dart';
 import 'data/repositories/auth_repository.dart';
 import 'data/repositories/accounting_repository.dart';
 import 'data/repositories/module_repository.dart';
@@ -81,15 +82,20 @@ class App extends StatelessWidget {
           BlocProvider(
             create: (_) => AccountingCubit(repository: accountingRepository),
           ),
+          BlocProvider(create: (_) => ThemeCubit()),
           BlocProvider(create: (_) => TabCubit()),
         ],
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          title: 'mi_crm',
-          theme: AppTheme.light,
-          darkTheme: AppTheme.dark,
-          themeMode: ThemeMode.system,
-          home: const _RootPage(),
+        child: BlocBuilder<ThemeCubit, ThemeMode>(
+          builder: (context, themeMode) {
+            return MaterialApp(
+              debugShowCheckedModeBanner: false,
+              title: 'mi_crm',
+              theme: AppTheme.light,
+              darkTheme: AppTheme.dark,
+              themeMode: themeMode,
+              home: const _RootPage(),
+            );
+          },
         ),
       ),
     );

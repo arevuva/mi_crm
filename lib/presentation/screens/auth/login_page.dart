@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../app.dart';
 import '../../../blocs/auth/auth_bloc.dart';
 import '../../../blocs/navigation/tab_cubit.dart';
+import '../admin/admin_page.dart';
 import 'register_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -97,6 +98,16 @@ class _LoginPageState extends State<LoginPage> {
                             Navigator.of(context).push(RegisterRoute());
                           },
                           child: const Text('Создать аккаунт'),
+                        ),
+                        const SizedBox(height: 4),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const AdminPage()),
+                            );
+                          },
+                          icon: const Icon(Icons.admin_panel_settings_outlined),
+                          label: const Text('Режим администратора'),
                         ),
                       ],
                     );

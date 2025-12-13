@@ -2,6 +2,7 @@ import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../models/module.dart';
 import '../models/operation.dart';
 
 class LocalDatabase {
@@ -22,7 +23,7 @@ class LocalDatabase {
     final path = join(docsDir.path, 'mi_crm.db');
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE users (
@@ -41,6 +42,15 @@ class LocalDatabase {
             created_at INTEGER
           );
         ''');
+
+        await _createModulesTable(db);
+        await _seedModules(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await _createModulesTable(db);
+          await _seedModules(db);
+        }
       },
     );
   }
@@ -81,5 +91,45 @@ class LocalDatabase {
     final db = await database;
     await db.delete('operations');
     await db.delete('users');
+  }
+
+  Future<List<CRMModule>> fetchModules() async {
+    final db = await database;
+    final maps = await db.query('modules', orderBy: 'sort_order ASC');
+    return maps.map(CRMModule.fromMap).toList();
+  }
+
+  Future<void> updateModule(CRMModule module) async {
+    final db = await database;
+    await db.update(
+      'modules',
+      module.toMap(),
+      where: 'id = ?',
+      whereArgs: [module.id],
+    );
+  }
+
+  Future<void> _createModulesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS modules (
+        id TEXT PRIMARY KEY,
+        title TEXT,
+        description TEXT,
+        enabled INTEGER,
+        sort_order INTEGER
+      );
+    ''');
+  }
+
+  Future<void> _seedModules(Database db) async {
+    final defaults = CRMModule.defaultModules;
+    for (var i = 0; i < defaults.length; i++) {
+      final module = defaults[i];
+      await db.insert(
+        'modules',
+        module.copyWith(sortOrder: i).toMap(),
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
   }
 }

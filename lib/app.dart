@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'blocs/auth/auth_bloc.dart';
+import 'blocs/modules/module_cubit.dart';
 import 'blocs/navigation/tab_cubit.dart';
 import 'blocs/operations/operations_bloc.dart';
 import 'blocs/report/report_cubit.dart';
 import 'data/repositories/auth_repository.dart';
+import 'data/repositories/module_repository.dart';
 import 'data/repositories/operation_repository.dart';
 import 'presentation/screens/auth/login_page.dart';
 import 'presentation/screens/auth/register_page.dart';
@@ -22,11 +24,13 @@ class App extends StatelessWidget {
   Widget build(BuildContext context) {
     final authRepository = AuthRepository();
     final operationRepository = OperationRepository();
+    final moduleRepository = ModuleRepository();
 
     return MultiRepositoryProvider(
       providers: [
         RepositoryProvider.value(value: authRepository),
         RepositoryProvider.value(value: operationRepository),
+        RepositoryProvider.value(value: moduleRepository),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -38,6 +42,9 @@ class App extends StatelessWidget {
           ),
           BlocProvider(
             create: (_) => ReportCubit(repository: operationRepository)..refresh(),
+          ),
+          BlocProvider(
+            create: (_) => ModuleCubit(repository: moduleRepository)..load(),
           ),
           BlocProvider(create: (_) => TabCubit()),
         ],

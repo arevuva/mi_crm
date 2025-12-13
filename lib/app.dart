@@ -1,0 +1,117 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import 'blocs/auth/auth_bloc.dart';
+import 'blocs/navigation/tab_cubit.dart';
+import 'blocs/operations/operations_bloc.dart';
+import 'blocs/report/report_cubit.dart';
+import 'data/repositories/auth_repository.dart';
+import 'data/repositories/operation_repository.dart';
+import 'presentation/screens/auth/login_page.dart';
+import 'presentation/screens/auth/register_page.dart';
+import 'presentation/screens/home/home_page.dart';
+import 'presentation/screens/profile/profile_page.dart';
+import 'presentation/screens/report/report_page.dart';
+import 'presentation/widgets/responsive_scaffold.dart';
+import 'theme.dart';
+
+class App extends StatelessWidget {
+  const App({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final authRepository = AuthRepository();
+    final operationRepository = OperationRepository();
+
+    return MultiRepositoryProvider(
+      providers: [
+        RepositoryProvider.value(value: authRepository),
+        RepositoryProvider.value(value: operationRepository),
+      ],
+      child: MultiBlocProvider(
+        providers: [
+          BlocProvider(
+            create: (_) => AuthBloc(authRepository: authRepository)..add(AppStarted()),
+          ),
+          BlocProvider(
+            create: (_) => OperationsBloc(repository: operationRepository)..add(LoadOperations()),
+          ),
+          BlocProvider(
+            create: (_) => ReportCubit(repository: operationRepository)..refresh(),
+          ),
+          BlocProvider(create: (_) => TabCubit()),
+        ],
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'mi_crm',
+          theme: AppTheme.light,
+          home: const _RootPage(),
+        ),
+      ),
+    );
+  }
+}
+
+class _RootPage extends StatelessWidget {
+  const _RootPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<AuthBloc, AuthState>(
+      builder: (context, state) {
+        if (state is AuthLoading || state is AuthInitial) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (state is Authenticated) {
+          return const _MainTabs();
+        }
+
+        if (state is Unauthenticated) {
+          return const LoginPage();
+        }
+
+        return const SizedBox.shrink();
+      },
+    );
+  }
+}
+
+class _MainTabs extends StatelessWidget {
+  const _MainTabs();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<TabCubit, int>(
+      builder: (context, index) {
+        return ResponsiveScaffold(
+          selectedIndex: index,
+          onItemSelected: (value) => context.read<TabCubit>().selectTab(value),
+          destinations: const [
+            NavigationDestination(icon: Icon(Icons.space_dashboard_outlined), label: 'Главная'),
+            NavigationDestination(icon: Icon(Icons.bar_chart), label: 'Отчёт'),
+            NavigationDestination(icon: Icon(Icons.person_outline), label: 'Профиль'),
+          ],
+          body: IndexedStack(
+            index: index,
+            children: const [
+              HomePage(),
+              ReportPage(),
+              ProfilePage(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class LoginRoute extends MaterialPageRoute<void> {
+  LoginRoute({super.settings}) : super(builder: (_) => const LoginPage());
+}
+
+class RegisterRoute extends MaterialPageRoute<void> {
+  RegisterRoute({super.settings}) : super(builder: (_) => const RegisterPage());
+}

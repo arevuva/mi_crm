@@ -9,7 +9,16 @@ class AuthRepository {
   AuthRepository({LocalDatabase? database}) : _database = database ?? LocalDatabase();
 
   Future<AppUser> register({required String email, required String password}) async {
+    final employeeMap = await _database.fetchEmployeeByEmail(email);
+    if (employeeMap == null) {
+      throw Exception('Email не зарегистрирован администратором');
+    }
+    if (employeeMap['user_id'] != null) {
+      throw Exception('Для этой почты уже есть аккаунт');
+    }
+
     final id = await _database.insertUser(email: email, password: password);
+    await _database.attachUserToEmployee(employeeId: employeeMap['id'] as int, userId: id);
     final user = AppUser(id: id, email: email);
     await _cacheUserId(id);
     return user;
@@ -24,6 +33,18 @@ class AuthRepository {
       throw Exception('Неверный пароль');
     }
     final user = AppUser(id: map['id'] as int, email: map['email'] as String);
+
+    final employeeMap = await _database.fetchEmployeeByEmail(email);
+    if (employeeMap == null) {
+      throw Exception('Email не зарегистрирован администратором');
+    }
+    final boundUserId = employeeMap['user_id'] as int?;
+    if (boundUserId != null && boundUserId != user.id) {
+      throw Exception('Аккаунт для этой почты привязан к другому пользователю');
+    }
+    if (boundUserId == null) {
+      await _database.attachUserToEmployee(employeeId: employeeMap['id'] as int, userId: user.id);
+    }
     await _cacheUserId(user.id);
     return user;
   }
@@ -39,7 +60,15 @@ class AuthRepository {
           limit: 1,
         ));
     if (map.isEmpty) return null;
-    return AppUser.fromMap(map.first);
+    final user = AppUser.fromMap(map.first);
+    final employeeMap = await _database.fetchEmployeeByEmail(user.email);
+    if (employeeMap == null) return null;
+    final boundUserId = employeeMap['user_id'] as int?;
+    if (boundUserId != null && boundUserId != user.id) return null;
+    if (boundUserId == null) {
+      await _database.attachUserToEmployee(employeeId: employeeMap['id'] as int, userId: user.id);
+    }
+    return user;
   }
 
   Future<void> logout() async {

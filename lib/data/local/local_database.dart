@@ -23,7 +23,7 @@ class LocalDatabase {
     final path = join(docsDir.path, 'mi_crm.db');
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE users (
@@ -54,6 +54,9 @@ class LocalDatabase {
         }
         if (oldVersion < 3) {
           await _createCompanyTables(db);
+        }
+        if (oldVersion < 4) {
+          await _upgradeEmployeesWithEmail(db);
         }
       },
     );
@@ -147,9 +150,11 @@ class LocalDatabase {
       CREATE TABLE IF NOT EXISTS employees (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         company_id INTEGER,
+        email TEXT UNIQUE,
         name TEXT,
         position_id INTEGER,
-        status TEXT
+        status TEXT,
+        user_id INTEGER
       );
     ''');
 
@@ -288,6 +293,7 @@ class LocalDatabase {
 
   Future<int> addEmployee({
     required int companyId,
+    required String email,
     required String name,
     required int positionId,
     required String status,
@@ -295,6 +301,7 @@ class LocalDatabase {
     final db = await database;
     return db.insert('employees', {
       'company_id': companyId,
+      'email': email,
       'name': name,
       'position_id': positionId,
       'status': status,
@@ -304,6 +311,23 @@ class LocalDatabase {
   Future<List<Map<String, dynamic>>> fetchEmployees(int companyId) async {
     final db = await database;
     return db.query('employees', where: 'company_id = ?', whereArgs: [companyId], orderBy: 'id DESC');
+  }
+
+  Future<Map<String, dynamic>?> fetchEmployeeByEmail(String email) async {
+    final db = await database;
+    final rows = await db.query(
+      'employees',
+      where: 'email = ?',
+      whereArgs: [email],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first;
+  }
+
+  Future<void> attachUserToEmployee({required int employeeId, required int userId}) async {
+    final db = await database;
+    await db.update('employees', {'user_id': userId}, where: 'id = ?', whereArgs: [employeeId]);
   }
 
   Future<void> updateEmployeeStatus(int employeeId, String status) async {
@@ -493,5 +517,16 @@ class LocalDatabase {
   Future<List<Map<String, dynamic>>> fetchAccountingEntries(int companyId) async {
     final db = await database;
     return db.query('accounting_entries', where: 'company_id = ?', whereArgs: [companyId], orderBy: 'created_at DESC');
+  }
+
+  Future<void> _upgradeEmployeesWithEmail(Database db) async {
+    final existingColumns = await db.rawQuery('PRAGMA table_info(employees);');
+    final hasEmail = existingColumns.any((row) => row['name'] == 'email');
+    if (!hasEmail) {
+      await db.execute('ALTER TABLE employees ADD COLUMN email TEXT;');
+      await db.execute('ALTER TABLE employees ADD COLUMN user_id INTEGER;');
+      await db.execute("UPDATE employees SET email = 'user_' || id || '@placeholder.local' WHERE email IS NULL OR email = '';");
+      await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_email ON employees(email);');
+    }
   }
 }

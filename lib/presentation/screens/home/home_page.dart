@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 
+import '../../../blocs/auth/auth_bloc.dart';
 import '../../../blocs/accounting/accounting_cubit.dart';
 import '../../../blocs/accounting/accounting_state.dart';
 import '../../../blocs/company/company_cubit.dart';
@@ -82,52 +83,245 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Главная')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: BlocBuilder<CompanyCubit, CompanyState>(
-          builder: (context, companyState) {
-            if (companyState.loading && companyState.company == null) {
-              return const Center(child: CircularProgressIndicator());
-            }
+    final authState = context.watch<AuthBloc>().state;
+    return BlocBuilder<CompanyCubit, CompanyState>(
+      builder: (context, companyState) {
+        if (companyState.loading && companyState.company == null) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
 
-            if (companyState.company == null) {
-              return const Center(
+        if (companyState.company == null) {
+          return const Scaffold(
+            body: Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
                 child: Text('Создайте компанию в режиме администратора, чтобы начать работу со всеми модулями.'),
-              );
-            }
+              ),
+            ),
+          );
+        }
 
-            _ensureModuleData(companyState.company!.id);
-            final moduleState = context.watch<ModuleCubit>().state;
-            final salesState = context.watch<SalesCubit>().state;
-            final docState = context.watch<DocumentCubit>().state;
-            final prState = context.watch<PrCubit>().state;
-            final accountingState = context.watch<AccountingCubit>().state;
-            final operationsState = context.watch<OperationsBloc>().state;
-            final isWide = MediaQuery.of(context).size.width > 800;
+        final currentEmployee = _findEmployeeForUser(companyState, authState);
+        if (currentEmployee == null) {
+          return const Scaffold(
+            body: Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('Для входа в CRM администратор должен привязать ваш email к сотруднику.'),
+              ),
+            ),
+          );
+        }
 
-            return ListView(
-              children: [
-                const _ModulesOverview(),
-                const SizedBox(height: 12),
-                if (_isEnabled(moduleState, 'sales'))
-                  _buildSalesCard(context, salesState, companyState, isWide),
-                if (_isEnabled(moduleState, 'docs'))
-                  _buildDocsCard(context, docState, companyState),
-                if (_isEnabled(moduleState, 'pr_smm'))
-                  _buildPrCard(context, prState, companyState),
-                if (_isEnabled(moduleState, 'hr')) _buildHrCard(companyState),
-                if (_isEnabled(moduleState, 'finance'))
-                  _buildAccountingCard(context, accountingState, companyState),
-                const SizedBox(height: 12),
-                _buildOperationsSnapshot(context, operationsState),
-              ],
-            );
-          },
-        ),
-      ),
+        final position = companyState.positions.firstWhere(
+          (p) => p.id == currentEmployee.positionId,
+          orElse: () => companyState.positions.isNotEmpty
+              ? companyState.positions.first
+              : throw Exception('Нет доступных должностей'),
+        );
+
+        final allowedModules = position.modules.toSet();
+        final moduleState = context.watch<ModuleCubit>().state;
+        final salesState = context.watch<SalesCubit>().state;
+        final docState = context.watch<DocumentCubit>().state;
+        final prState = context.watch<PrCubit>().state;
+        final accountingState = context.watch<AccountingCubit>().state;
+        final operationsState = context.watch<OperationsBloc>().state;
+        final isWide = MediaQuery.of(context).size.width > 800;
+
+        _ensureModuleData(companyState.company!.id);
+        final enabledModules = moduleState.modules.where((m) => m.enabled).map((m) => m.id).toSet();
+
+        final tabs = <_ModuleTab>[
+          _ModuleTab(
+            id: 'overview',
+            title: 'Обзор',
+            content: _buildOverviewTab(operationsState),
+          ),
+          _ModuleTab(
+            id: 'sales',
+            title: 'Продажи',
+            content: _moduleGuard(
+              moduleId: 'sales',
+              label: 'Продажи',
+              enabledModules: enabledModules,
+              allowedModules: allowedModules,
+              child: _buildSalesTab(context, salesState, companyState, isWide),
+            ),
+          ),
+          _ModuleTab(
+            id: 'docs',
+            title: 'Документация',
+            content: _moduleGuard(
+              moduleId: 'docs',
+              label: 'Документация',
+              enabledModules: enabledModules,
+              allowedModules: allowedModules,
+              child: _buildDocsTab(context, docState, companyState),
+            ),
+          ),
+          _ModuleTab(
+            id: 'pr_smm',
+            title: 'PR / SMM',
+            content: _moduleGuard(
+              moduleId: 'pr_smm',
+              label: 'PR / SMM',
+              enabledModules: enabledModules,
+              allowedModules: allowedModules,
+              child: _buildPrTab(context, prState, companyState),
+            ),
+          ),
+          _ModuleTab(
+            id: 'hr',
+            title: 'Персонал',
+            content: _moduleGuard(
+              moduleId: 'hr',
+              label: 'Персонал',
+              enabledModules: enabledModules,
+              allowedModules: allowedModules,
+              child: _buildHrTab(companyState),
+            ),
+          ),
+          _ModuleTab(
+            id: 'finance',
+            title: 'Бухгалтерия',
+            content: _moduleGuard(
+              moduleId: 'finance',
+              label: 'Бухгалтерия',
+              enabledModules: enabledModules,
+              allowedModules: allowedModules,
+              child: _buildAccountingTab(context, accountingState, companyState),
+            ),
+          ),
+        ];
+
+        return DefaultTabController(
+          length: tabs.length,
+          child: Scaffold(
+            appBar: AppBar(
+              title: const Text('Главная'),
+              bottom: TabBar(
+                isScrollable: true,
+                tabs: tabs.map((t) => Tab(text: t.title)).toList(),
+              ),
+            ),
+            body: TabBarView(
+              children: tabs.map((t) => t.content).toList(),
+            ),
+          ),
+        );
+      },
     );
+  }
+
+  Employee? _findEmployeeForUser(CompanyState companyState, AuthState authState) {
+    if (authState is! Authenticated) return null;
+    try {
+      return companyState.employees.firstWhere(
+        (e) => e.email.toLowerCase() == authState.user.email.toLowerCase(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Widget _buildOverviewTab(OperationsState operationsState) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const _ModulesOverview(),
+        const SizedBox(height: 12),
+        _buildOperationsSnapshot(context, operationsState),
+      ],
+    );
+  }
+
+  Widget _buildSalesTab(
+    BuildContext context,
+    SalesState state,
+    CompanyState companyState,
+    bool isWide,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildSalesCard(context, state, companyState, isWide),
+      ],
+    );
+  }
+
+  Widget _buildDocsTab(
+    BuildContext context,
+    DocumentState docState,
+    CompanyState companyState,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildDocsCard(context, docState, companyState),
+      ],
+    );
+  }
+
+  Widget _buildPrTab(
+    BuildContext context,
+    PrState prState,
+    CompanyState companyState,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildPrCard(context, prState, companyState),
+      ],
+    );
+  }
+
+  Widget _buildHrTab(CompanyState companyState) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildHrCard(companyState),
+      ],
+    );
+  }
+
+  Widget _buildAccountingTab(
+    BuildContext context,
+    AccountingState accountingState,
+    CompanyState companyState,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildAccountingCard(context, accountingState, companyState),
+      ],
+    );
+  }
+
+  Widget _moduleGuard({
+    required String moduleId,
+    required String label,
+    required Set<String> enabledModules,
+    required Set<String> allowedModules,
+    required Widget child,
+  }) {
+    if (!enabledModules.contains(moduleId)) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text('Модуль "$label" отключён администратором.'),
+        ),
+      );
+    }
+    if (!allowedModules.contains(moduleId)) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text('Для вашей должности нет доступа к модулю "$label".'),
+        ),
+      );
+    }
+    return child;
   }
 
   void _ensureModuleData(int companyId) {
@@ -137,10 +331,6 @@ class _HomePageState extends State<HomePage> {
     context.read<DocumentCubit>().load(companyId);
     context.read<PrCubit>().load(companyId);
     context.read<AccountingCubit>().load(companyId);
-  }
-
-  bool _isEnabled(ModuleState state, String id) {
-    return state.modules.any((m) => m.id == id && m.enabled);
   }
 
   Widget _buildSalesCard(
@@ -846,6 +1036,14 @@ class _HomePageState extends State<HomePage> {
         return Colors.redAccent;
     }
   }
+}
+
+class _ModuleTab {
+  final String id;
+  final String title;
+  final Widget content;
+
+  const _ModuleTab({required this.id, required this.title, required this.content});
 }
 
 class _ModulesOverview extends StatelessWidget {

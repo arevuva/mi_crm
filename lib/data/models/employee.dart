@@ -6,15 +6,19 @@ class Employee extends Equatable {
   final int id;
   final int companyId;
   final int positionId;
+  final String email;
   final String name;
   final EmployeeStatus status;
+  final int? userId;
 
   const Employee({
     required this.id,
     required this.companyId,
     required this.positionId,
+    required this.email,
     required this.name,
     required this.status,
+    this.userId,
   });
 
   factory Employee.fromMap(Map<String, dynamic> map) {
@@ -23,11 +27,13 @@ class Employee extends Equatable {
       id: map['id'] as int,
       companyId: map['company_id'] as int,
       positionId: map['position_id'] as int,
+      email: map['email'] as String,
       name: map['name'] as String,
       status: EmployeeStatus.values.firstWhere(
         (e) => e.name == statusRaw,
         orElse: () => EmployeeStatus.home,
       ),
+      userId: map['user_id'] as int?,
     );
   }
 
@@ -35,18 +41,22 @@ class Employee extends Equatable {
         'id': id,
         'company_id': companyId,
         'position_id': positionId,
+        'email': email,
         'name': name,
         'status': status.name,
+        'user_id': userId,
       };
 
-  Employee copyWith({EmployeeStatus? status}) => Employee(
+  Employee copyWith({EmployeeStatus? status, int? userId}) => Employee(
         id: id,
         companyId: companyId,
         positionId: positionId,
+        email: email,
         name: name,
         status: status ?? this.status,
+        userId: userId ?? this.userId,
       );
 
   @override
-  List<Object?> get props => [id, companyId, positionId, name, status];
+  List<Object?> get props => [id, companyId, positionId, email, name, status, userId];
 }

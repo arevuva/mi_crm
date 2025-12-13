@@ -34,14 +34,22 @@ class CompanyRepository {
     return rows.map(Employee.fromMap).toList();
   }
 
+  Future<Employee?> fetchEmployeeByEmail(String email) async {
+    final row = await _db.fetchEmployeeByEmail(email);
+    if (row == null) return null;
+    return Employee.fromMap(row);
+  }
+
   Future<Employee> addEmployee({
     required int companyId,
+    required String email,
     required String name,
     required int positionId,
     required EmployeeStatus status,
   }) async {
     final id = await _db.addEmployee(
       companyId: companyId,
+      email: email,
       name: name,
       positionId: positionId,
       status: status.name,
@@ -50,6 +58,7 @@ class CompanyRepository {
       id: id,
       companyId: companyId,
       positionId: positionId,
+      email: email,
       name: name,
       status: status,
     );

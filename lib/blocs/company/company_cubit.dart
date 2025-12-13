@@ -62,12 +62,13 @@ class CompanyCubit extends Cubit<CompanyState> {
     }
   }
 
-  Future<void> addEmployee({required String name, required int positionId, required EmployeeStatus status}) async {
+  Future<void> addEmployee({required String email, required String name, required int positionId, required EmployeeStatus status}) async {
     if (state.company == null) return;
     emit(state.copyWith(loading: true, error: null));
     try {
       await _repository.addEmployee(
         companyId: state.company!.id,
+        email: email,
         name: name,
         positionId: positionId,
         status: status,

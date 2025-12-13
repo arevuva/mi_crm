@@ -381,12 +381,14 @@ class _EmployeesBlock extends StatefulWidget {
 
 class _EmployeesBlockState extends State<_EmployeesBlock> {
   final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
   int? _positionId;
   EmployeeStatus _status = EmployeeStatus.onsite;
 
   @override
   void dispose() {
     _nameController.dispose();
+    _emailController.dispose();
     super.dispose();
   }
 
@@ -414,6 +416,12 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
                 ),
                 const SizedBox(height: 12),
                 TextField(
+                  controller: _emailController,
+                  decoration: const InputDecoration(labelText: 'Рабочий email'),
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 12),
+                TextField(
                   controller: _nameController,
                   decoration: const InputDecoration(labelText: 'ФИО сотрудника'),
                 ),
@@ -433,14 +441,19 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
                 ElevatedButton.icon(
                   onPressed: state.loading
                       ? null
-                      : () {
-                          final name = _nameController.text.trim();
-                          if (name.isEmpty || _positionId == null) return;
-                          context
-                              .read<CompanyCubit>()
-                              .addEmployee(name: name, positionId: _positionId!, status: _status);
+                          : () {
+                              final name = _nameController.text.trim();
+                          final email = _emailController.text.trim();
+                          if (name.isEmpty || email.isEmpty || _positionId == null) return;
+                          context.read<CompanyCubit>().addEmployee(
+                                email: email,
+                                name: name,
+                                positionId: _positionId!,
+                                status: _status,
+                              );
                           _nameController.clear();
-                        },
+                          _emailController.clear();
+                            },
                   icon: const Icon(Icons.person_add_alt),
                   label: state.loading
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
@@ -450,7 +463,13 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
                 ...state.employees.map(
                   (employee) => ListTile(
                     title: Text(employee.name),
-                    subtitle: Text('Должность: ${state.positions.firstWhere((p) => p.id == employee.positionId).title}'),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Email: ${employee.email}'),
+                        Text('Должность: ${state.positions.firstWhere((p) => p.id == employee.positionId).title}'),
+                      ],
+                    ),
                     trailing: DropdownButton<EmployeeStatus>(
                       value: employee.status,
                       onChanged: (value) {

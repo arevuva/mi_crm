@@ -47,12 +47,17 @@ class _RegisterPageState extends State<RegisterPage> {
                     return Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Регистрация',
-                            style: Theme.of(context).textTheme.headlineMedium),
-                        const SizedBox(height: 24),
-                        if (state is Unauthenticated && state.message != null)
-                          Text(state.message!, style: const TextStyle(color: Colors.red)),
+                    children: [
+                      Text('Регистрация',
+                          style: Theme.of(context).textTheme.headlineMedium),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Регистрация доступна только по рабочей почте, которую выдал администратор компании.',
+                        style: TextStyle(color: Colors.black54),
+                      ),
+                      const SizedBox(height: 24),
+                      if (state is Unauthenticated && state.message != null)
+                        Text(state.message!, style: const TextStyle(color: Colors.red)),
                         const SizedBox(height: 12),
                         Form(
                           key: _formKey,

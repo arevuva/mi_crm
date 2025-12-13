@@ -127,10 +127,16 @@ class _HomePageState extends State<HomePage> {
         final prState = context.watch<PrCubit>().state;
         final accountingState = context.watch<AccountingCubit>().state;
         final operationsState = context.watch<OperationsBloc>().state;
-        final isWide = MediaQuery.of(context).size.width > 800;
+        final screenWidth = MediaQuery.of(context).size.width;
+        final isWide = screenWidth > 900;
+        final isCompact = screenWidth < 640;
 
         _ensureModuleData(companyState.company!.id);
-        final enabledModules = moduleState.modules.where((m) => m.enabled).map((m) => m.id).toSet();
+        final enabledModules = moduleState.modules
+            .where((m) => m.enabled)
+            .toList()
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+        final enabledModuleIds = enabledModules.map((m) => m.id).toSet();
 
         final tabs = <_ModuleTab>[
           _ModuleTab(
@@ -138,61 +144,66 @@ class _HomePageState extends State<HomePage> {
             title: 'Обзор',
             content: _buildOverviewTab(operationsState),
           ),
-          _ModuleTab(
-            id: 'sales',
-            title: 'Продажи',
-            content: _moduleGuard(
-              moduleId: 'sales',
-              label: 'Продажи',
-              enabledModules: enabledModules,
-              allowedModules: allowedModules,
-              child: _buildSalesTab(context, salesState, companyState, isWide),
+          if (enabledModuleIds.contains('sales'))
+            _ModuleTab(
+              id: 'sales',
+              title: 'Продажи',
+              content: _moduleGuard(
+                moduleId: 'sales',
+                label: 'Продажи',
+                enabledModules: enabledModuleIds,
+                allowedModules: allowedModules,
+                child: _buildSalesTab(context, salesState, companyState, isWide, isCompact),
+              ),
             ),
-          ),
-          _ModuleTab(
-            id: 'docs',
-            title: 'Документация',
-            content: _moduleGuard(
-              moduleId: 'docs',
-              label: 'Документация',
-              enabledModules: enabledModules,
-              allowedModules: allowedModules,
-              child: _buildDocsTab(context, docState, companyState),
+          if (enabledModuleIds.contains('docs'))
+            _ModuleTab(
+              id: 'docs',
+              title: 'Документация',
+              content: _moduleGuard(
+                moduleId: 'docs',
+                label: 'Документация',
+                enabledModules: enabledModuleIds,
+                allowedModules: allowedModules,
+                child: _buildDocsTab(context, docState, companyState),
+              ),
             ),
-          ),
-          _ModuleTab(
-            id: 'pr_smm',
-            title: 'PR / SMM',
-            content: _moduleGuard(
-              moduleId: 'pr_smm',
-              label: 'PR / SMM',
-              enabledModules: enabledModules,
-              allowedModules: allowedModules,
-              child: _buildPrTab(context, prState, companyState),
+          if (enabledModuleIds.contains('pr_smm'))
+            _ModuleTab(
+              id: 'pr_smm',
+              title: 'PR / SMM',
+              content: _moduleGuard(
+                moduleId: 'pr_smm',
+                label: 'PR / SMM',
+                enabledModules: enabledModuleIds,
+                allowedModules: allowedModules,
+                child: _buildPrTab(context, prState, companyState),
+              ),
             ),
-          ),
-          _ModuleTab(
-            id: 'hr',
-            title: 'Персонал',
-            content: _moduleGuard(
-              moduleId: 'hr',
-              label: 'Персонал',
-              enabledModules: enabledModules,
-              allowedModules: allowedModules,
-              child: _buildHrTab(companyState),
+          if (enabledModuleIds.contains('hr'))
+            _ModuleTab(
+              id: 'hr',
+              title: 'Персонал',
+              content: _moduleGuard(
+                moduleId: 'hr',
+                label: 'Персонал',
+                enabledModules: enabledModuleIds,
+                allowedModules: allowedModules,
+                child: _buildHrTab(companyState),
+              ),
             ),
-          ),
-          _ModuleTab(
-            id: 'finance',
-            title: 'Бухгалтерия',
-            content: _moduleGuard(
-              moduleId: 'finance',
-              label: 'Бухгалтерия',
-              enabledModules: enabledModules,
-              allowedModules: allowedModules,
-              child: _buildAccountingTab(context, accountingState, companyState),
+          if (enabledModuleIds.contains('finance'))
+            _ModuleTab(
+              id: 'finance',
+              title: 'Бухгалтерия',
+              content: _moduleGuard(
+                moduleId: 'finance',
+                label: 'Бухгалтерия',
+                enabledModules: enabledModuleIds,
+                allowedModules: allowedModules,
+                child: _buildAccountingTab(context, accountingState, companyState),
+              ),
             ),
-          ),
         ];
 
         return DefaultTabController(
@@ -241,11 +252,12 @@ class _HomePageState extends State<HomePage> {
     SalesState state,
     CompanyState companyState,
     bool isWide,
+    bool isCompact,
   ) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _buildSalesCard(context, state, companyState, isWide),
+        _buildSalesCard(context, state, companyState, isWide, isCompact),
       ],
     );
   }
@@ -338,6 +350,7 @@ class _HomePageState extends State<HomePage> {
     SalesState state,
     CompanyState companyState,
     bool isWide,
+    bool isCompact,
   ) {
     return Card(
       child: Padding(
@@ -357,7 +370,7 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 12),
             Wrap(
-              spacing: 12,
+              spacing: isCompact ? 8 : 12,
               runSpacing: 12,
               children: [
                 SizedBox(
@@ -412,9 +425,12 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
             const Divider(height: 24),
-            Row(
+            Wrap(
+              spacing: isCompact ? 8 : 12,
+              runSpacing: 12,
               children: [
-                Expanded(
+                SizedBox(
+                  width: isWide ? 360 : double.infinity,
                   child: DropdownButtonFormField<int>(
                     value: _selectedProductId,
                     decoration: const InputDecoration(labelText: 'Товар для операции'),
@@ -424,9 +440,8 @@ class _HomePageState extends State<HomePage> {
                     onChanged: (value) => setState(() => _selectedProductId = value),
                   ),
                 ),
-                if (isWide) const SizedBox(width: 12),
                 SizedBox(
-                  width: isWide ? 180 : double.infinity,
+                  width: isWide ? 200 : double.infinity,
                   child: DropdownButtonFormField<SalesRecordType>(
                     value: _salesRecordType,
                     decoration: const InputDecoration(labelText: 'Тип'),

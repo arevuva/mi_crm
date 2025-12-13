@@ -32,9 +32,6 @@ linked_*.ds
 **/macos/Flutter/GeneratedPluginRegistrant.*
 **/macos/Pods
 
-# Windows
-**/windows/flutter/generated_plugin_registrant.*
-
 # Web
 lib/generated_plugin_registrant.dart
 
@@ -54,3 +51,9 @@ lib/generated_plugin_registrant.dart
 *.swp
 .DS_Store
 Thumbs.db
+
+# Flutter desktop ephemeral files
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
+windows/runner/Debug/
+windows/runner/Release/

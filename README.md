@@ -18,4 +18,14 @@ flutter pub get
 flutter run
 ```
 
+### Desktop (Linux/Windows)
+В репозитории добавлены заготовки проектов Linux и Windows. Перед первой сборкой выполните генерацию ephemeral-файлов:
+
+```bash
+flutter config --enable-linux-desktop --enable-windows-desktop
+flutter pub get
+flutter build linux   # или flutter run -d linux
+flutter build windows # или flutter run -d windows
+```
+
 Приложение использует локальную базу данных и не требует удалённых сервисов.

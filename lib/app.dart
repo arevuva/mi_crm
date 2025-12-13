@@ -87,6 +87,8 @@ class App extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           title: 'mi_crm',
           theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          themeMode: ThemeMode.system,
           home: const _RootPage(),
         ),
       ),

@@ -384,7 +384,6 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   int? _positionId;
-  EmployeeStatus _status = EmployeeStatus.onsite;
 
   @override
   void dispose() {
@@ -427,30 +426,18 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
                   decoration: const InputDecoration(labelText: 'ФИО сотрудника'),
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<EmployeeStatus>(
-                  value: _status,
-                  decoration: const InputDecoration(labelText: 'Статус'),
-                  items: const [
-                    DropdownMenuItem(value: EmployeeStatus.onsite, child: Text('На работе')),
-                    DropdownMenuItem(value: EmployeeStatus.commute, child: Text('В пути')),
-                    DropdownMenuItem(value: EmployeeStatus.remote, child: Text('Удалённо')),
-                    DropdownMenuItem(value: EmployeeStatus.home, child: Text('Дома')),
-                  ],
-                  onChanged: (value) => setState(() => _status = value ?? EmployeeStatus.onsite),
-                ),
-                const SizedBox(height: 12),
                 ElevatedButton.icon(
                   onPressed: state.loading
                       ? null
                           : () {
-                              final name = _nameController.text.trim();
+                          final name = _nameController.text.trim();
                           final email = _emailController.text.trim();
                           if (name.isEmpty || email.isEmpty || _positionId == null) return;
                           context.read<CompanyCubit>().addEmployee(
                                 email: email,
                                 name: name,
                                 positionId: _positionId!,
-                                status: _status,
+                                status: EmployeeStatus.onsite,
                               );
                           _nameController.clear();
                           _emailController.clear();
@@ -469,20 +456,7 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
                       children: [
                         Text('Email: ${employee.email}'),
                         Text('Должность: ${state.positions.firstWhere((p) => p.id == employee.positionId).title}'),
-                      ],
-                    ),
-                    trailing: DropdownButton<EmployeeStatus>(
-                      value: employee.status,
-                      onChanged: (value) {
-                        if (value != null) {
-                          context.read<CompanyCubit>().updateStatus(employee.id, value);
-                        }
-                      },
-                      items: const [
-                        DropdownMenuItem(value: EmployeeStatus.onsite, child: Text('На работе')),
-                        DropdownMenuItem(value: EmployeeStatus.commute, child: Text('В пути')),
-                        DropdownMenuItem(value: EmployeeStatus.remote, child: Text('Удалённо')),
-                        DropdownMenuItem(value: EmployeeStatus.home, child: Text('Дома')),
+                        Text('Статус сотрудника: ${_statusLabel(employee.status)}'),
                       ],
                     ),
                   ),
@@ -493,5 +467,18 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
         );
       },
     );
+  }
+
+  String _statusLabel(EmployeeStatus status) {
+    switch (status) {
+      case EmployeeStatus.onsite:
+        return 'На работе';
+      case EmployeeStatus.commute:
+        return 'В пути';
+      case EmployeeStatus.remote:
+        return 'Удалённо';
+      case EmployeeStatus.home:
+        return 'Дома';
+    }
   }
 }

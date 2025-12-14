@@ -18,8 +18,10 @@ import '../../../blocs/report/report_cubit.dart';
 import '../../../blocs/sales/sales_cubit.dart';
 import '../../../blocs/sales/sales_state.dart';
 import '../../../data/models/employee.dart';
+import '../../../data/models/module.dart';
 import '../../../data/models/operation.dart';
 import '../../../data/models/product.dart';
+import '../../../data/models/position.dart';
 import '../../../data/models/sales_record.dart';
 import '../../widgets/operation_card.dart';
 
@@ -58,6 +60,7 @@ class _HomePageState extends State<HomePage> {
   int? _accountingTargetId;
   String _accountingTargetType = 'product';
   int? _loadedCompanyId;
+  String? _activeModuleId;
 
   @override
   void dispose() {
@@ -127,97 +130,71 @@ class _HomePageState extends State<HomePage> {
         final prState = context.watch<PrCubit>().state;
         final accountingState = context.watch<AccountingCubit>().state;
         final operationsState = context.watch<OperationsBloc>().state;
-        final screenWidth = MediaQuery.of(context).size.width;
-        final isWide = screenWidth > 900;
-        final isCompact = screenWidth < 640;
 
         _ensureModuleData(companyState.company!.id);
         final enabledModules = moduleState.modules
             .where((m) => m.enabled)
             .toList()
           ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-        final enabledModuleIds = enabledModules.map((m) => m.id).toSet();
 
-        final tabs = <_ModuleTab>[
-          _ModuleTab(
-            id: 'overview',
-            title: 'Обзор',
-            content: _buildOverviewTab(operationsState),
-          ),
-          if (enabledModuleIds.contains('sales'))
-            _ModuleTab(
-              id: 'sales',
-              title: 'Продажи',
-              content: _moduleGuard(
-                moduleId: 'sales',
-                label: 'Продажи',
-                enabledModules: enabledModuleIds,
-                allowedModules: allowedModules,
-                child: _buildSalesTab(context, salesState, companyState, isWide, isCompact),
-              ),
-            ),
-          if (enabledModuleIds.contains('docs'))
-            _ModuleTab(
-              id: 'docs',
-              title: 'Документация',
-              content: _moduleGuard(
-                moduleId: 'docs',
-                label: 'Документация',
-                enabledModules: enabledModuleIds,
-                allowedModules: allowedModules,
-                child: _buildDocsTab(context, docState, companyState),
-              ),
-            ),
-          if (enabledModuleIds.contains('pr_smm'))
-            _ModuleTab(
-              id: 'pr_smm',
-              title: 'PR / SMM',
-              content: _moduleGuard(
-                moduleId: 'pr_smm',
-                label: 'PR / SMM',
-                enabledModules: enabledModuleIds,
-                allowedModules: allowedModules,
-                child: _buildPrTab(context, prState, companyState),
-              ),
-            ),
-          if (enabledModuleIds.contains('hr'))
-            _ModuleTab(
-              id: 'hr',
-              title: 'Персонал',
-              content: _moduleGuard(
-                moduleId: 'hr',
-                label: 'Персонал',
-                enabledModules: enabledModuleIds,
-                allowedModules: allowedModules,
-                child: _buildHrTab(companyState),
-              ),
-            ),
-          if (enabledModuleIds.contains('finance'))
-            _ModuleTab(
-              id: 'finance',
-              title: 'Бухгалтерия',
-              content: _moduleGuard(
-                moduleId: 'finance',
-                label: 'Бухгалтерия',
-                enabledModules: enabledModuleIds,
-                allowedModules: allowedModules,
-                child: _buildAccountingTab(context, accountingState, companyState),
-              ),
-            ),
-        ];
+        final availableModules = enabledModules
+            .where((m) => allowedModules.contains(m.id))
+            .toList();
 
-        return DefaultTabController(
-          length: tabs.length,
-          child: Scaffold(
-            appBar: AppBar(
-              title: const Text('Главная'),
-              bottom: TabBar(
-                isScrollable: true,
-                tabs: tabs.map((t) => Tab(text: t.title)).toList(),
-              ),
-            ),
-            body: TabBarView(
-              children: tabs.map((t) => t.content).toList(),
+        if (_activeModuleId == null ||
+            !availableModules.any((m) => m.id == _activeModuleId)) {
+          _activeModuleId = availableModules.isNotEmpty ? availableModules.first.id : null;
+        }
+
+        return Scaffold(
+          appBar: AppBar(title: const Text('Главная')),
+          body: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Модули CRM', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                if (availableModules.isEmpty)
+                  const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text('Нет доступных модулей. Обратитесь к администратору или включите модули.'),
+                    ),
+                  )
+                else
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: availableModules
+                        .map(
+                          (module) => _ModuleCard(
+                            module: module,
+                            isSelected: module.id == _activeModuleId,
+                            onTap: () => setState(() => _activeModuleId = module.id),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: KeyedSubtree(
+                      key: ValueKey(_activeModuleId ?? 'overview'),
+                      child: _buildModuleContent(
+                        moduleId: _activeModuleId,
+                        operationsState: operationsState,
+                        salesState: salesState,
+                        docState: docState,
+                        prState: prState,
+                        accountingState: accountingState,
+                        companyState: companyState,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         );
@@ -236,76 +213,77 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Widget _buildModuleContent({
+    required String? moduleId,
+    required OperationsState operationsState,
+    required SalesState salesState,
+    required DocumentState docState,
+    required PrState prState,
+    required AccountingState accountingState,
+    required CompanyState companyState,
+  }) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWide = screenWidth > 900;
+    final isCompact = screenWidth < 640;
+
+    switch (moduleId) {
+      case 'sales':
+        return _ModuleShell(
+          title: 'Продажи',
+          tabs: const ['Справочники', 'Операции'],
+          children: [
+            _buildSalesReferences(salesState, companyState, isWide, isCompact),
+            _buildSalesOperations(salesState, companyState, isWide),
+          ],
+        );
+      case 'docs':
+        return _ModuleShell(
+          title: 'Документация',
+          tabs: const ['Товарооборот', 'Документы'],
+          children: [
+            _buildDocsCard(docState, companyState, allowedTypes: const [DocumentType.receipt, DocumentType.consumable]),
+            _buildDocsCard(docState, companyState, allowedTypes: const [DocumentType.act, DocumentType.contract]),
+          ],
+        );
+      case 'pr_smm':
+        return _ModuleShell(
+          title: 'PR / SMM',
+          tabs: const ['Соцсети', 'Коммуникации'],
+          children: [
+            _buildPrSocial(prState, companyState),
+            _buildPrCommunication(prState, companyState),
+          ],
+        );
+      case 'finance':
+        return _ModuleShell(
+          title: 'Бухгалтерия',
+          tabs: const ['Персонал', 'Операционные расходы'],
+          children: [
+            _buildAccountingCard(accountingState, companyState, targetType: 'employee'),
+            _buildAccountingCard(accountingState, companyState, targetType: 'expense'),
+          ],
+        );
+      case 'hr':
+        return _ModuleShell(
+          title: 'Управление персоналом',
+          tabs: const ['Сотрудники'],
+          children: [
+            _buildHrCard(companyState),
+          ],
+        );
+      default:
+        return _buildOverviewTab(operationsState);
+    }
+  }
+
   Widget _buildOverviewTab(OperationsState operationsState) {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      key: const ValueKey('overview'),
+      padding: const EdgeInsets.all(8),
       children: [
         const _ModulesOverview(),
         const SizedBox(height: 12),
         _buildOperationsSnapshot(context, operationsState),
-      ],
-    );
-  }
-
-  Widget _buildSalesTab(
-    BuildContext context,
-    SalesState state,
-    CompanyState companyState,
-    bool isWide,
-    bool isCompact,
-  ) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildSalesCard(context, state, companyState, isWide, isCompact),
-      ],
-    );
-  }
-
-  Widget _buildDocsTab(
-    BuildContext context,
-    DocumentState docState,
-    CompanyState companyState,
-  ) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildDocsCard(context, docState, companyState),
-      ],
-    );
-  }
-
-  Widget _buildPrTab(
-    BuildContext context,
-    PrState prState,
-    CompanyState companyState,
-  ) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildPrCard(context, prState, companyState),
-      ],
-    );
-  }
-
-  Widget _buildHrTab(CompanyState companyState) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildHrCard(companyState),
-      ],
-    );
-  }
-
-  Widget _buildAccountingTab(
-    BuildContext context,
-    AccountingState accountingState,
-    CompanyState companyState,
-  ) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildAccountingCard(context, accountingState, companyState),
       ],
     );
   }
@@ -345,212 +323,240 @@ class _HomePageState extends State<HomePage> {
     context.read<AccountingCubit>().load(companyId);
   }
 
-  Widget _buildSalesCard(
-    BuildContext context,
+  Widget _buildSalesReferences(
     SalesState state,
     CompanyState companyState,
     bool isWide,
     bool isCompact,
   ) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return ListView(
+      padding: const EdgeInsets.all(8),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Продажи и лиды', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                IconButton(
-                  onPressed: () => context.read<SalesCubit>().load(companyState.company!.id),
-                  icon: const Icon(Icons.refresh),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Номенклатура и лиды',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                    IconButton(
+                      onPressed: () => context.read<SalesCubit>().load(companyState.company!.id),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: isCompact ? 8 : 12,
+                  runSpacing: 12,
+                  children: [
+                    SizedBox(
+                      width: isWide ? 260 : double.infinity,
+                      child: TextField(
+                        controller: _categoryController,
+                        decoration: const InputDecoration(labelText: 'Категория товара'),
+                        onSubmitted: (_) => _createCategory(context),
+                      ),
+                    ),
+                    SizedBox(
+                      width: isWide ? 260 : double.infinity,
+                      child: DropdownButtonFormField<int>(
+                        value: _selectedCategoryId,
+                        decoration: const InputDecoration(labelText: 'Категория для товара'),
+                        items: state.categories
+                            .map((c) => DropdownMenuItem(value: c.id, child: Text(c.title)))
+                            .toList(),
+                        onChanged: (value) => setState(() => _selectedCategoryId = value),
+                      ),
+                    ),
+                    SizedBox(
+                      width: isWide ? 260 : double.infinity,
+                      child: TextField(
+                        controller: _productTitleController,
+                        decoration: const InputDecoration(labelText: 'Название товара'),
+                      ),
+                    ),
+                    SizedBox(
+                      width: isWide ? 160 : double.infinity,
+                      child: TextField(
+                        controller: _productPriceController,
+                        decoration: const InputDecoration(labelText: 'Цена'),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
+                    ),
+                    SizedBox(
+                      width: isWide ? 160 : double.infinity,
+                      child: TextField(
+                        controller: _productStockController,
+                        decoration: const InputDecoration(labelText: 'Количество на складе'),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: state.loading ? null : () => _createProduct(context),
+                      icon: const Icon(Icons.inventory_2_outlined),
+                      label: state.loading
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('Сохранить товар'),
+                    ),
+                  ],
+                ),
+                const Divider(height: 24),
+                Text('Лиды', style: Theme.of(context).textTheme.titleSmall),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    SizedBox(
+                      width: isWide ? 200 : double.infinity,
+                      child: TextField(
+                        controller: _leadNameController,
+                        decoration: const InputDecoration(labelText: 'Имя лида'),
+                      ),
+                    ),
+                    SizedBox(
+                      width: isWide ? 200 : double.infinity,
+                      child: TextField(
+                        controller: _leadContactController,
+                        decoration: const InputDecoration(labelText: 'Контакты'),
+                      ),
+                    ),
+                    SizedBox(
+                      width: isWide ? 180 : double.infinity,
+                      child: DropdownButtonFormField<String>(
+                        value: _leadStatus,
+                        decoration: const InputDecoration(labelText: 'Статус'),
+                        items: const [
+                          DropdownMenuItem(value: 'new', child: Text('Новый')),
+                          DropdownMenuItem(value: 'in_progress', child: Text('В работе')),
+                          DropdownMenuItem(value: 'won', child: Text('Успешно')),
+                          DropdownMenuItem(value: 'lost', child: Text('Закрыт')),
+                        ],
+                        onChanged: (value) => setState(() => _leadStatus = value ?? 'new'),
+                      ),
+                    ),
+                    SizedBox(
+                      width: isWide ? 220 : double.infinity,
+                      child: DropdownButtonFormField<int>(
+                        value: _selectedProductId,
+                        decoration: const InputDecoration(labelText: 'Интерес к товару'),
+                        items: state.products
+                            .map((p) => DropdownMenuItem(value: p.id, child: Text(p.title)))
+                            .toList(),
+                        onChanged: (value) => setState(() => _selectedProductId = value),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: state.loading ? null : () => _createLead(context),
+                      child: state.loading
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('Добавить лида'),
+                    ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: isCompact ? 8 : 12,
-              runSpacing: 12,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSalesOperations(
+    SalesState state,
+    CompanyState companyState,
+    bool isWide,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(8),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  width: isWide ? 260 : double.infinity,
-                  child: TextField(
-                    controller: _categoryController,
-                    decoration: const InputDecoration(labelText: 'Категория товара'),
-                    onSubmitted: (_) => _createCategory(context),
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Фиксация продаж и поступлений',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                    IconButton(
+                      onPressed: () => context.read<SalesCubit>().load(companyState.company!.id),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ],
                 ),
-                SizedBox(
-                  width: isWide ? 260 : double.infinity,
-                  child: DropdownButtonFormField<int>(
-                    value: _selectedCategoryId,
-                    decoration: const InputDecoration(labelText: 'Категория для товара'),
-                    items: state.categories
-                        .map((c) => DropdownMenuItem(value: c.id, child: Text(c.title)))
-                        .toList(),
-                    onChanged: (value) => setState(() => _selectedCategoryId = value),
-                  ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    SizedBox(
+                      width: isWide ? 360 : double.infinity,
+                      child: DropdownButtonFormField<int>(
+                        value: _selectedProductId,
+                        decoration: const InputDecoration(labelText: 'Товар для операции'),
+                        items: state.products
+                            .map((p) => DropdownMenuItem(
+                                  value: p.id,
+                                  child: Text('${p.title} — ${p.price.toStringAsFixed(0)}'),
+                                ))
+                            .toList(),
+                        onChanged: (value) => setState(() => _selectedProductId = value),
+                      ),
+                    ),
+                    SizedBox(
+                      width: isWide ? 200 : double.infinity,
+                      child: DropdownButtonFormField<SalesRecordType>(
+                        value: _salesRecordType,
+                        decoration: const InputDecoration(labelText: 'Тип операции'),
+                        items: const [
+                          DropdownMenuItem(value: SalesRecordType.sale, child: Text('Продажа')),
+                          DropdownMenuItem(value: SalesRecordType.income, child: Text('Поступление')),
+                          DropdownMenuItem(value: SalesRecordType.reservation, child: Text('Резерв')), 
+                        ],
+                        onChanged: (value) => setState(() => _salesRecordType = value ?? SalesRecordType.sale),
+                      ),
+                    ),
+                    SizedBox(
+                      width: isWide ? 120 : double.infinity,
+                      child: TextField(
+                        controller: _recordQuantityController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Кол-во'),
+                      ),
+                    ),
+                    SizedBox(
+                      width: isWide ? 160 : double.infinity,
+                      child: TextField(
+                        controller: _amountController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(labelText: 'Сумма/доход'),
+                      ),
+                    ),
+                    SizedBox(
+                      width: isWide ? 260 : double.infinity,
+                      child: TextField(
+                        controller: _salesNoteController,
+                        decoration: const InputDecoration(labelText: 'Комментарий'),
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: state.loading ? null : () => _submitSalesRecord(context),
+                      icon: const Icon(Icons.save_outlined),
+                      label: state.loading
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('Зафиксировать'),
+                    ),
+                  ],
                 ),
-                SizedBox(
-                  width: isWide ? 260 : double.infinity,
-                  child: TextField(
-                    controller: _productTitleController,
-                    decoration: const InputDecoration(labelText: 'Название товара'),
-                  ),
-                ),
-                SizedBox(
-                  width: isWide ? 160 : double.infinity,
-                  child: TextField(
-                    controller: _productPriceController,
-                    decoration: const InputDecoration(labelText: 'Цена'),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  ),
-                ),
-                SizedBox(
-                  width: isWide ? 160 : double.infinity,
-                  child: TextField(
-                    controller: _productStockController,
-                    decoration: const InputDecoration(labelText: 'Количество на складе'),
-                    keyboardType: TextInputType.number,
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: state.loading ? null : () => _createProduct(context),
-                  icon: const Icon(Icons.inventory_2_outlined),
-                  label: state.loading
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Сохранить товар'),
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            Wrap(
-              spacing: isCompact ? 8 : 12,
-              runSpacing: 12,
-              children: [
-                SizedBox(
-                  width: isWide ? 360 : double.infinity,
-                  child: DropdownButtonFormField<int>(
-                    value: _selectedProductId,
-                    decoration: const InputDecoration(labelText: 'Товар для операции'),
-                    items: state.products
-                        .map((p) => DropdownMenuItem(value: p.id, child: Text('${p.title} — ${p.price.toStringAsFixed(0)}')))
-                        .toList(),
-                    onChanged: (value) => setState(() => _selectedProductId = value),
-                  ),
-                ),
-                SizedBox(
-                  width: isWide ? 200 : double.infinity,
-                  child: DropdownButtonFormField<SalesRecordType>(
-                    value: _salesRecordType,
-                    decoration: const InputDecoration(labelText: 'Тип'),
-                    items: const [
-                      DropdownMenuItem(value: SalesRecordType.sale, child: Text('Продажа')),
-                      DropdownMenuItem(value: SalesRecordType.income, child: Text('Поступление')),
-                      DropdownMenuItem(value: SalesRecordType.reservation, child: Text('Резерв')),
-                    ],
-                    onChanged: (value) => setState(() => _salesRecordType = value ?? SalesRecordType.sale),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                SizedBox(
-                  width: isWide ? 120 : double.infinity,
-                  child: TextField(
-                    controller: _recordQuantityController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Кол-во'),
-                  ),
-                ),
-                SizedBox(
-                  width: isWide ? 160 : double.infinity,
-                  child: TextField(
-                    controller: _amountController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Сумма/доход'),
-                  ),
-                ),
-                SizedBox(
-                  width: isWide ? 260 : double.infinity,
-                  child: TextField(
-                    controller: _salesNoteController,
-                    decoration: const InputDecoration(labelText: 'Комментарий'),
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: state.loading ? null : () => _submitSalesRecord(context),
-                  icon: const Icon(Icons.save_outlined),
-                  label: state.loading
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Зафиксировать'),
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            Text('Лиды', style: Theme.of(context).textTheme.titleSmall),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                SizedBox(
-                  width: isWide ? 200 : double.infinity,
-                  child: TextField(
-                    controller: _leadNameController,
-                    decoration: const InputDecoration(labelText: 'Имя лида'),
-                  ),
-                ),
-                SizedBox(
-                  width: isWide ? 200 : double.infinity,
-                  child: TextField(
-                    controller: _leadContactController,
-                    decoration: const InputDecoration(labelText: 'Контакты'),
-                  ),
-                ),
-                SizedBox(
-                  width: isWide ? 180 : double.infinity,
-                  child: DropdownButtonFormField<String>(
-                    value: _leadStatus,
-                    decoration: const InputDecoration(labelText: 'Статус'),
-                    items: const [
-                      DropdownMenuItem(value: 'new', child: Text('Новый')),
-                      DropdownMenuItem(value: 'in_progress', child: Text('В работе')),
-                      DropdownMenuItem(value: 'won', child: Text('Успешно')),
-                      DropdownMenuItem(value: 'lost', child: Text('Закрыт')),
-                    ],
-                    onChanged: (value) => setState(() => _leadStatus = value ?? 'new'),
-                  ),
-                ),
-                SizedBox(
-                  width: isWide ? 220 : double.infinity,
-                  child: DropdownButtonFormField<int>(
-                    value: _selectedProductId,
-                    decoration: const InputDecoration(labelText: 'Интерес к товару'),
-                    items: state.products
-                        .map((p) => DropdownMenuItem(value: p.id, child: Text(p.title)))
-                        .toList(),
-                    onChanged: (value) => setState(() => _selectedProductId = value),
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: state.loading ? null : () => _createLead(context),
-                  child: state.loading
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Добавить лида'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (state.records.isNotEmpty)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Divider(),
+                if (state.records.isNotEmpty) ...[
+                  const Divider(height: 24),
                   Text('Последние операции', style: Theme.of(context).textTheme.titleSmall),
                   ...state.records.take(5).map(
                         (r) => ListTile(
@@ -561,170 +567,228 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                 ],
-              ),
-          ],
+              ],
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
-  Widget _buildDocsCard(BuildContext context, DocumentState state, CompanyState companyState) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildDocsCard(DocumentState state, CompanyState companyState,
+      {required List<DocumentType> allowedTypes}) {
+    final filteredDocs = state.documents.where((d) => allowedTypes.contains(d.type)).toList();
+    return ListView(
+      padding: const EdgeInsets.all(8),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Документация', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                IconButton(
-                  onPressed: () => context.read<DocumentCubit>().load(companyState.company!.id),
-                  icon: const Icon(Icons.refresh),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<DocumentType>(
-              value: _documentType,
-              decoration: const InputDecoration(labelText: 'Тип документа'),
-              items: const [
-                DropdownMenuItem(value: DocumentType.receipt, child: Text('Приход товара')),
-                DropdownMenuItem(value: DocumentType.act, child: Text('Акт')),
-                DropdownMenuItem(value: DocumentType.consumable, child: Text('Расходник')),
-                DropdownMenuItem(value: DocumentType.contract, child: Text('Договор')),
-              ],
-              onChanged: (value) => setState(() => _documentType = value ?? DocumentType.receipt),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _docTitleController,
-              decoration: const InputDecoration(labelText: 'Название / номер документа'),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<int>(
-              value: _selectedDocProductId,
-              decoration: const InputDecoration(labelText: 'Связанный товар (необязательно)'),
-              items: context
-                  .read<SalesCubit>()
-                  .state
-                  .products
-                  .map((p) => DropdownMenuItem(value: p.id, child: Text(p.title)))
-                  .toList(),
-              onChanged: (value) => setState(() => _selectedDocProductId = value),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _docNoteController,
-              maxLines: 2,
-              decoration: const InputDecoration(labelText: 'Комментарий'),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton.icon(
-              onPressed: state.loading ? null : () => _createDocument(context),
-              icon: const Icon(Icons.file_copy_outlined),
-              label: state.loading
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Сохранить запись'),
-            ),
-            if (state.documents.isNotEmpty) ...[
-              const Divider(height: 24),
-              ...state.documents.take(5).map(
-                    (d) => ListTile(
-                      leading: const Icon(Icons.description_outlined),
-                      title: Text('${d.type.name} — ${d.title}'),
-                      subtitle: Text(d.note ?? ''),
-                      trailing: Text(DateFormat('dd.MM').format(d.createdAt)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      allowedTypes.contains(DocumentType.receipt)
+                          ? 'Контроль товарооборота'
+                          : 'Договоры и акты',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                     ),
-                  ),
-            ],
-          ],
+                    IconButton(
+                      onPressed: () => context.read<DocumentCubit>().load(companyState.company!.id),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<DocumentType>(
+                  value: allowedTypes.contains(_documentType) ? _documentType : allowedTypes.first,
+                  decoration: const InputDecoration(labelText: 'Тип документа'),
+                  items: allowedTypes
+                      .map((type) => DropdownMenuItem(value: type, child: Text(_docTitle(type))))
+                      .toList(),
+                  onChanged: (value) => setState(() => _documentType = value ?? allowedTypes.first),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _docTitleController,
+                  decoration: const InputDecoration(labelText: 'Название / номер документа'),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<int>(
+                  value: _selectedDocProductId,
+                  decoration: const InputDecoration(labelText: 'Связанный товар (необязательно)'),
+                  items: context
+                      .read<SalesCubit>()
+                      .state
+                      .products
+                      .map((p) => DropdownMenuItem(value: p.id, child: Text(p.title)))
+                      .toList(),
+                  onChanged: (value) => setState(() => _selectedDocProductId = value),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _docNoteController,
+                  maxLines: 2,
+                  decoration: const InputDecoration(labelText: 'Комментарий'),
+                ),
+                const SizedBox(height: 8),
+                ElevatedButton.icon(
+                  onPressed: state.loading ? null : () => _createDocument(context),
+                  icon: const Icon(Icons.file_copy_outlined),
+                  label: state.loading
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Сохранить запись'),
+                ),
+                if (filteredDocs.isNotEmpty) ...[
+                  const Divider(height: 24),
+                  ...filteredDocs.take(5).map(
+                        (d) => ListTile(
+                          leading: const Icon(Icons.description_outlined),
+                          title: Text('${_docTitle(d.type)} — ${d.title}'),
+                          subtitle: Text(d.note ?? ''),
+                          trailing: Text(DateFormat('dd.MM').format(d.createdAt)),
+                        ),
+                      ),
+                ],
+              ],
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
-  Widget _buildPrCard(BuildContext context, PrState state, CompanyState companyState) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildPrSocial(PrState state, CompanyState companyState) {
+    return ListView(
+      padding: const EdgeInsets.all(8),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('PR / SMM', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                IconButton(
-                  onPressed: () => context.read<PrCubit>().load(companyState.company!.id),
-                  icon: const Icon(Icons.refresh),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Ведение соцсетей',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                    IconButton(
+                      onPressed: () => context.read<PrCubit>().load(companyState.company!.id),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _postChannelController,
+                  decoration: const InputDecoration(labelText: 'Канал публикации'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _postMessageController,
+                  minLines: 2,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Пост (заглушка контента)'),
+                ),
+                const SizedBox(height: 8),
+                ElevatedButton.icon(
+                  onPressed: state.loading ? null : () => _createSmmPost(context),
+                  icon: const Icon(Icons.send_outlined),
+                  label: state.loading
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Запланировать пост'),
+                ),
+                if (state.posts.isNotEmpty) ...[
+                  const Divider(height: 24),
+                  ...state.posts.take(3).map(
+                        (p) => ListTile(
+                          leading: const Icon(Icons.campaign_outlined),
+                          title: Text('${p.channel}: ${p.message}'),
+                          subtitle: Text('Статус: ${p.status}'),
+                          trailing: Text(DateFormat('dd.MM').format(p.createdAt)),
+                        ),
+                      ),
+                ],
               ],
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _assetTitleController,
-              decoration: const InputDecoration(labelText: 'Документация к товару'),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<int>(
-              value: _selectedPrProductId,
-              decoration: const InputDecoration(labelText: 'Товар (опционально)'),
-              items: context
-                  .read<SalesCubit>()
-                  .state
-                  .products
-                  .map((p) => DropdownMenuItem(value: p.id, child: Text(p.title)))
-                  .toList(),
-              onChanged: (value) => setState(() => _selectedPrProductId = value),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _assetNoteController,
-              decoration: const InputDecoration(labelText: 'Пояснение'),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: state.loading ? null : () => _createPrAsset(context),
-              child: state.loading
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Добавить документ'),
-            ),
-            const Divider(height: 24),
-            TextField(
-              controller: _postChannelController,
-              decoration: const InputDecoration(labelText: 'Канал публикации'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _postMessageController,
-              minLines: 2,
-              maxLines: 3,
-              decoration: const InputDecoration(labelText: 'Пост (заглушка контента)'),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton.icon(
-              onPressed: state.loading ? null : () => _createSmmPost(context),
-              icon: const Icon(Icons.send_outlined),
-              label: state.loading
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Запланировать пост'),
-            ),
-            if (state.posts.isNotEmpty) ...[
-              const Divider(height: 24),
-              ...state.posts.take(3).map(
-                    (p) => ListTile(
-                      leading: const Icon(Icons.campaign_outlined),
-                      title: Text('${p.channel}: ${p.message}'),
-                      subtitle: Text('Статус: ${p.status}'),
-                      trailing: Text(DateFormat('dd.MM').format(p.createdAt)),
-                    ),
-                  ),
-            ],
-          ],
+          ),
         ),
-      ),
+      ],
+    );
+  }
+
+  Widget _buildPrCommunication(PrState state, CompanyState companyState) {
+    return ListView(
+      padding: const EdgeInsets.all(8),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Коммуникации с клиентами',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                    IconButton(
+                      onPressed: () => context.read<PrCubit>().load(companyState.company!.id),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _assetTitleController,
+                  decoration: const InputDecoration(labelText: 'Документация к товару'),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<int>(
+                  value: _selectedPrProductId,
+                  decoration: const InputDecoration(labelText: 'Товар (опционально)'),
+                  items: context
+                      .read<SalesCubit>()
+                      .state
+                      .products
+                      .map((p) => DropdownMenuItem(value: p.id, child: Text(p.title)))
+                      .toList(),
+                  onChanged: (value) => setState(() => _selectedPrProductId = value),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _assetNoteController,
+                  decoration: const InputDecoration(labelText: 'Пояснение'),
+                ),
+                const SizedBox(height: 8),
+                ElevatedButton(
+                  onPressed: state.loading ? null : () => _createPrAsset(context),
+                  child: state.loading
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Добавить документ'),
+                ),
+                if (state.assets.isNotEmpty) ...[
+                  const Divider(height: 24),
+                  ...state.assets.take(3).map(
+                        (a) => ListTile(
+                          leading: const Icon(Icons.folder_shared_outlined),
+                          title: Text(a.title),
+                          subtitle: Text(a.note ?? ''),
+                          trailing: a.productId != null
+                              ? Text('Товар: ${a.productId}')
+                              : const SizedBox.shrink(),
+                        ),
+                      ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -747,6 +811,14 @@ class _HomePageState extends State<HomePage> {
                   subtitle: Text('Статус: ${_statusLabel(e.status)}'),
                   trailing:
                       Text(state.positions.firstWhere((p) => p.id == e.positionId).title),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => _EmployeeDetailsPage(
+                        employee: e,
+                        position: state.positions.firstWhere((p) => p.id == e.positionId),
+                      ),
+                    ),
+                  ),
                 ),
               ),
           ],
@@ -756,11 +828,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildAccountingCard(
-    BuildContext context,
     AccountingState state,
-    CompanyState companyState,
-  ) {
+    CompanyState companyState, {
+    required String targetType,
+  }) {
+    _accountingTargetType = targetType;
     final salesState = context.read<SalesCubit>().state;
+    final isExpense = targetType == 'expense';
+    _accountingTargetId ??= isExpense ? companyState.company?.id : null;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -769,37 +844,32 @@ class _HomePageState extends State<HomePage> {
           children: [
             const Text('Бухгалтерия', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: _accountingTargetType,
-              decoration: const InputDecoration(labelText: 'Объект изменения'),
-              items: const [
-                DropdownMenuItem(value: 'product', child: Text('Цена товара')),
-                DropdownMenuItem(value: 'employee', child: Text('Зарплата сотрудника')),
-              ],
-              onChanged: (value) => setState(() => _accountingTargetType = value ?? 'product'),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<int>(
-              value: _accountingTargetId,
-              decoration: InputDecoration(
-                  labelText: _accountingTargetType == 'product' ? 'Товар' : 'Сотрудник'),
-              items: (_accountingTargetType == 'product' ? salesState.products : companyState.employees)
-                  .map(
-                    (item) => DropdownMenuItem(
-                      value: _accountingTargetType == 'product' ? (item as Product).id : (item as Employee).id,
-                      child: Text(_accountingTargetType == 'product'
-                          ? (item as Product).title
-                          : (item as Employee).name),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) => setState(() => _accountingTargetId = value),
-            ),
+            if (!isExpense)
+              DropdownButtonFormField<int>(
+                value: _accountingTargetId,
+                decoration: InputDecoration(
+                    labelText: _accountingTargetType == 'product' ? 'Товар' : 'Сотрудник'),
+                items: (_accountingTargetType == 'product' ? salesState.products : companyState.employees)
+                    .map(
+                      (item) => DropdownMenuItem(
+                        value: _accountingTargetType == 'product' ? (item as Product).id : (item as Employee).id,
+                        child: Text(_accountingTargetType == 'product'
+                            ? (item as Product).title
+                            : (item as Employee).name),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) => setState(() => _accountingTargetId = value),
+              )
+            else
+              const Text('Операционные расходы будут зафиксированы на компанию.'),
             const SizedBox(height: 8),
             TextField(
               controller: _accountingDeltaController,
               decoration: InputDecoration(
-                labelText: _accountingTargetType == 'product' ? 'Новая цена/дельта' : 'Корректировка зп',
+                labelText: isExpense
+                    ? 'Сумма операционного расхода'
+                    : (_accountingTargetType == 'product' ? 'Новая цена/дельта' : 'Корректировка зп'),
               ),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
             ),
@@ -872,6 +942,19 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
     );
+  }
+
+  String _docTitle(DocumentType type) {
+    switch (type) {
+      case DocumentType.receipt:
+        return 'Приход товара';
+      case DocumentType.act:
+        return 'Акт';
+      case DocumentType.consumable:
+        return 'Расходник';
+      case DocumentType.contract:
+        return 'Договор';
+    }
   }
 
   IconData _iconForRecord(SalesRecordType type) {
@@ -1053,14 +1136,6 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class _ModuleTab {
-  final String id;
-  final String title;
-  final Widget content;
-
-  const _ModuleTab({required this.id, required this.title, required this.content});
-}
-
 class _ModulesOverview extends StatelessWidget {
   const _ModulesOverview();
 
@@ -1149,6 +1224,129 @@ class _ModulesOverview extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _ModuleShell extends StatelessWidget {
+  final String title;
+  final List<String> tabs;
+  final List<Widget> children;
+
+  const _ModuleShell({required this.title, required this.tabs, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: DefaultTabController(
+        length: tabs.length,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+            ),
+            TabBar(
+              isScrollable: true,
+              tabs: tabs.map((t) => Tab(text: t)).toList(),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: TabBarView(
+                children: children
+                    .map((child) => Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: child,
+                        ))
+                    .toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ModuleCard extends StatelessWidget {
+  final CRMModule module;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ModuleCard({required this.module, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 220,
+      child: Card(
+        color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Flexible(
+                      child: Text(module.title, style: Theme.of(context).textTheme.titleMedium),
+                    ),
+                    Icon(isSelected ? Icons.visibility : Icons.visibility_outlined),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  module.description ?? 'Модуль CRM',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmployeeDetailsPage extends StatelessWidget {
+  final Employee employee;
+  final Position position;
+
+  const _EmployeeDetailsPage({required this.employee, required this.position});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(employee.name)),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.badge_outlined),
+              title: Text(position.title),
+              subtitle: const Text('Должность'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.email_outlined),
+              title: Text(employee.email),
+              subtitle: const Text('Рабочая почта'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: Text(_statusLabel(employee.status)),
+              subtitle: const Text('Статус сотрудника'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

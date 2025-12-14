@@ -300,10 +300,11 @@ class _PositionBlockState extends State<_PositionBlock> {
                 const SizedBox(height: 12),
                 BlocBuilder<ModuleCubit, ModuleState>(
                   builder: (context, moduleState) {
+                    final availableModules = moduleState.modules.where((m) => m.enabled).toList();
                     return Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: moduleState.modules
+                      children: availableModules
                           .map((m) => FilterChip(
                                 label: Text(m.title),
                                 selected: _selectedModules.contains(m.id),

@@ -7,6 +7,7 @@ import '../../../blocs/modules/module_cubit.dart';
 import '../../../blocs/modules/module_state.dart';
 import '../../../data/models/employee.dart';
 import '../../../data/models/module.dart';
+import '../../utils/status_labels.dart';
 
 class AdminPage extends StatefulWidget {
   const AdminPage({super.key});
@@ -456,7 +457,7 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
                       children: [
                         Text('Email: ${employee.email}'),
                         Text('Должность: ${state.positions.firstWhere((p) => p.id == employee.positionId).title}'),
-                        Text('Статус сотрудника: ${_statusLabel(employee.status)}'),
+                        Text('Статус сотрудника: ${statusLabel(employee.status)}'),
                       ],
                     ),
                   ),
@@ -469,16 +470,4 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
     );
   }
 
-  String _statusLabel(EmployeeStatus status) {
-    switch (status) {
-      case EmployeeStatus.onsite:
-        return 'На работе';
-      case EmployeeStatus.commute:
-        return 'В пути';
-      case EmployeeStatus.remote:
-        return 'Удалённо';
-      case EmployeeStatus.home:
-        return 'Дома';
-    }
-  }
 }

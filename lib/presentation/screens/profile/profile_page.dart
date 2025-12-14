@@ -7,6 +7,7 @@ import '../../../blocs/company/company_state.dart';
 import '../../../blocs/theme/theme_cubit.dart';
 import '../../../data/models/employee.dart';
 import '../../../data/models/user.dart';
+import '../../utils/status_labels.dart';
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
@@ -70,7 +71,7 @@ class _ProfileContentState extends State<_ProfileContent> {
                 ),
                 if (employee != null) ...[
                   const SizedBox(height: 8),
-                  Text('Ваш статус: ${_statusLabel(employee.status)}'),
+                  Text('Ваш статус: ${statusLabel(employee.status)}'),
                 ],
               ],
             ),
@@ -93,7 +94,7 @@ class _ProfileContentState extends State<_ProfileContent> {
                         items: EmployeeStatus.values
                             .map((s) => DropdownMenuItem(
                                   value: s,
-                                  child: Text(_statusLabel(s)),
+                                  child: Text(statusLabel(s)),
                                 ))
                             .toList(),
                         onChanged: (value) => setState(() => _selectedStatus = value ?? employee.status),

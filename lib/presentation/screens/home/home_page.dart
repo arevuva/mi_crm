@@ -23,6 +23,7 @@ import '../../../data/models/operation.dart';
 import '../../../data/models/product.dart';
 import '../../../data/models/position.dart';
 import '../../../data/models/sales_record.dart';
+import '../../utils/status_labels.dart';
 import '../../widgets/operation_card.dart';
 
 class HomePage extends StatefulWidget {
@@ -808,7 +809,7 @@ class _HomePageState extends State<HomePage> {
                 (e) => ListTile(
                   leading: const Icon(Icons.person_outline),
                   title: Text(e.name),
-                  subtitle: Text('Статус: ${_statusLabel(e.status)}'),
+                  subtitle: Text('Статус: ${statusLabel(e.status)}'),
                   trailing:
                       Text(state.positions.firstWhere((p) => p.id == e.positionId).title),
                   onTap: () => Navigator.of(context).push(
@@ -965,19 +966,6 @@ class _HomePageState extends State<HomePage> {
         return Icons.attach_money;
       case SalesRecordType.reservation:
         return Icons.bookmark_add_outlined;
-    }
-  }
-
-  String _statusLabel(EmployeeStatus status) {
-    switch (status) {
-      case EmployeeStatus.onsite:
-        return 'На работе';
-      case EmployeeStatus.commute:
-        return 'В пути';
-      case EmployeeStatus.remote:
-        return 'Удаленно';
-      case EmployeeStatus.home:
-        return 'Дома';
     }
   }
 
@@ -1341,7 +1329,7 @@ class _EmployeeDetailsPage extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(Icons.info_outline),
-              title: Text(_statusLabel(employee.status)),
+              title: Text(statusLabel(employee.status)),
               subtitle: const Text('Статус сотрудника'),
             ),
           ],

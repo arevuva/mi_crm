@@ -129,31 +129,86 @@ class _RootPage extends StatelessWidget {
   }
 }
 
-class _MainTabs extends StatelessWidget {
+class _MainTabs extends StatefulWidget {
   const _MainTabs();
+
+  @override
+  State<_MainTabs> createState() => _MainTabsState();
+}
+
+class _MainTabsState extends State<_MainTabs> {
+  late final List<GlobalKey<NavigatorState>> _navigatorKeys;
+
+  @override
+  void initState() {
+    super.initState();
+    _navigatorKeys = List.generate(3, (_) => GlobalKey<NavigatorState>());
+  }
 
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<TabCubit, int>(
       builder: (context, index) {
-        return ResponsiveScaffold(
-          selectedIndex: index,
-          onItemSelected: (value) => context.read<TabCubit>().selectTab(value),
-          destinations: const [
-            NavigationDestination(icon: Icon(Icons.space_dashboard_outlined), label: 'Главная'),
-            NavigationDestination(icon: Icon(Icons.bar_chart), label: 'Отчёт'),
-            NavigationDestination(icon: Icon(Icons.person_outline), label: 'Профиль'),
-          ],
-          body: IndexedStack(
-            index: index,
-            children: const [
-              HomePage(),
-              ReportPage(),
-              ProfilePage(),
+        return WillPopScope(
+          onWillPop: () async {
+            final currentNavigatorState = _navigatorKeys[index].currentState;
+            if (currentNavigatorState != null && currentNavigatorState.canPop()) {
+              currentNavigatorState.pop();
+              return false;
+            }
+            return true;
+          },
+          child: ResponsiveScaffold(
+            selectedIndex: index,
+            onItemSelected: (value) => context.read<TabCubit>().selectTab(value),
+            destinations: const [
+              NavigationDestination(icon: Icon(Icons.space_dashboard_outlined), label: 'Главная'),
+              NavigationDestination(icon: Icon(Icons.bar_chart), label: 'Отчёт'),
+              NavigationDestination(icon: Icon(Icons.person_outline), label: 'Профиль'),
             ],
+            body: IndexedStack(
+              index: index,
+              children: List.generate(
+                _navigatorKeys.length,
+                (i) => _TabNavigator(
+                  navigatorKey: _navigatorKeys[i],
+                  builder: _tabBuilders[i],
+                ),
+              ),
+            ),
           ),
         );
       },
+    );
+  }
+
+  List<WidgetBuilder> get _tabBuilders => const [
+        _homeBuilder,
+        _reportBuilder,
+        _profileBuilder,
+      ];
+
+  static Widget _homeBuilder(BuildContext context) => const HomePage();
+
+  static Widget _reportBuilder(BuildContext context) => const ReportPage();
+
+  static Widget _profileBuilder(BuildContext context) => const ProfilePage();
+}
+
+class _TabNavigator extends StatelessWidget {
+  final GlobalKey<NavigatorState> navigatorKey;
+  final WidgetBuilder builder;
+
+  const _TabNavigator({
+    required this.navigatorKey,
+    required this.builder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Navigator(
+      key: navigatorKey,
+      onGenerateRoute: (settings) => MaterialPageRoute(builder: builder, settings: settings),
     );
   }
 }

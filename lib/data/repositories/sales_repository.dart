@@ -98,6 +98,7 @@ class SalesRepository {
     required double amount,
     String? note,
     int? productId,
+    List<int> ownerIds = const [],
   }) async {
     final id = await _db.addSalesRecord(
       companyId: companyId,
@@ -106,6 +107,7 @@ class SalesRepository {
       amount: amount,
       note: note,
       productId: productId,
+      ownerIds: ownerIds.isEmpty ? null : ownerIds.join(','),
     );
 
     return SalesRecord(
@@ -116,6 +118,7 @@ class SalesRepository {
       amount: amount,
       note: note,
       productId: productId,
+      ownerIds: ownerIds,
       createdAt: DateTime.now(),
     );
   }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
@@ -17,6 +19,7 @@ import '../../../blocs/pr/pr_state.dart';
 import '../../../blocs/report/report_cubit.dart';
 import '../../../blocs/sales/sales_cubit.dart';
 import '../../../blocs/sales/sales_state.dart';
+import '../../../data/models/document_entry.dart';
 import '../../../data/models/employee.dart';
 import '../../../data/models/module.dart';
 import '../../../data/models/operation.dart';
@@ -34,28 +37,40 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final _amountController = TextEditingController();
   final _categoryController = TextEditingController();
   final _productTitleController = TextEditingController();
   final _productPriceController = TextEditingController();
   final _productStockController = TextEditingController();
   final _recordQuantityController = TextEditingController(text: '1');
+  final _unitPriceController = TextEditingController();
+  final _totalPriceController = TextEditingController();
   final _leadNameController = TextEditingController();
   final _leadContactController = TextEditingController();
+  final _intakePhotoUrlController = TextEditingController();
+  final _supplierNameController = TextEditingController();
+  final _supplierContactController = TextEditingController();
   final _salesNoteController = TextEditingController();
   final _docTitleController = TextEditingController();
   final _docNoteController = TextEditingController();
+  SalesRecordType _docOperationTypeFilter = SalesRecordType.sale;
+  int? _selectedDocRecordId;
   final _assetTitleController = TextEditingController();
   final _assetNoteController = TextEditingController();
   final _postChannelController = TextEditingController(text: 'VK');
   final _postMessageController = TextEditingController();
   final _accountingDeltaController = TextEditingController();
   final _accountingNoteController = TextEditingController();
-  SalesRecordType _salesRecordType = SalesRecordType.sale;
+  final Set<int> _recordOwnerIds = {};
+  final Set<int> _docOwnerIds = {};
   DocumentType _documentType = DocumentType.receipt;
+  final Set<int> _expandedEmployeeIds = {};
   String _leadStatus = 'new';
   int? _selectedCategoryId;
   int? _selectedProductId;
+  int? _selectedLeadProductId;
+  int? _selectedSupplierProductId;
+  int? _selectedSaleLeadId;
+  int? _selectedIntakeSupplierId;
   int? _selectedDocProductId;
   int? _selectedPrProductId;
   int? _accountingTargetId;
@@ -65,14 +80,18 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    _amountController.dispose();
     _categoryController.dispose();
     _productTitleController.dispose();
     _productPriceController.dispose();
     _productStockController.dispose();
     _recordQuantityController.dispose();
+    _unitPriceController.dispose();
+    _totalPriceController.dispose();
     _leadNameController.dispose();
     _leadContactController.dispose();
+    _intakePhotoUrlController.dispose();
+    _supplierNameController.dispose();
+    _supplierContactController.dispose();
     _salesNoteController.dispose();
     _docTitleController.dispose();
     _docNoteController.dispose();
@@ -131,6 +150,8 @@ class _HomePageState extends State<HomePage> {
         final prState = context.watch<PrCubit>().state;
         final accountingState = context.watch<AccountingCubit>().state;
         final operationsState = context.watch<OperationsBloc>().state;
+        final screenWidth = MediaQuery.of(context).size.width;
+        final useInlineModuleLayout = screenWidth >= 900;
 
         _ensureModuleData(companyState.company!.id);
         final enabledModules = moduleState.modules
@@ -142,60 +163,100 @@ class _HomePageState extends State<HomePage> {
             .where((m) => allowedModules.contains(m.id))
             .toList();
 
-        if (_activeModuleId == null ||
-            !availableModules.any((m) => m.id == _activeModuleId)) {
-          _activeModuleId = availableModules.isNotEmpty ? availableModules.first.id : null;
+        if (useInlineModuleLayout) {
+          if (_activeModuleId == null ||
+              !availableModules.any((m) => m.id == _activeModuleId)) {
+            _activeModuleId = availableModules.isNotEmpty ? availableModules.first.id : null;
+          }
+        } else {
+          _activeModuleId = null;
         }
 
         return Scaffold(
           appBar: AppBar(title: const Text('Главная')),
-          body: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Модули CRM', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 8),
-                if (availableModules.isEmpty)
-                  const Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(12),
-                      child: Text('Нет доступных модулей. Обратитесь к администратору или включите модули.'),
-                    ),
-                  )
-                else
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: availableModules
-                        .map(
-                          (module) => _ModuleCard(
-                            module: module,
-                            isSelected: module.id == _activeModuleId,
-                            onTap: () => setState(() => _activeModuleId = module.id),
+          body: NestedScrollView(
+            headerSliverBuilder: (context, innerBoxIsScrolled) => [
+              SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Модули CRM', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                      if (availableModules.isEmpty)
+                        const Card(
+                          child: Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Text('Нет доступных модулей. Обратитесь к администратору или включите модули.'),
                           ),
                         )
-                        .toList(),
-                  ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    child: KeyedSubtree(
-                      key: ValueKey(_activeModuleId ?? 'overview'),
-                      child: _buildModuleContent(
-                        moduleId: _activeModuleId,
-                        operationsState: operationsState,
-                        salesState: salesState,
-                        docState: docState,
-                        prState: prState,
-                        accountingState: accountingState,
-                        companyState: companyState,
-                      ),
-                    ),
+                      else
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            const spacing = 12.0;
+                            const minTileWidth = 240.0;
+                            final columns = math.max(
+                              1,
+                              math.min(
+                                availableModules.length,
+                                (constraints.maxWidth / (minTileWidth + spacing)).floor(),
+                              ),
+                            );
+                            final tileWidth = (constraints.maxWidth - spacing * (columns - 1)) / columns;
+
+                            return Wrap(
+                              spacing: spacing,
+                              runSpacing: spacing,
+                              children: availableModules.asMap().entries.map((entry) {
+                                final module = entry.value;
+                                final accentColor = _moduleColorForIndex(entry.key);
+                                return _ModuleCard(
+                                  module: module,
+                                  isSelected: useInlineModuleLayout && module.id == _activeModuleId,
+                                  width: tileWidth,
+                                  accentColor: accentColor,
+                                  backgroundColor: accentColor.withOpacity(0.08),
+                                  leadingIcon: _iconForModule(module.id),
+                                  onTap: () {
+                                    if (useInlineModuleLayout) {
+                                      setState(() => _activeModuleId = module.id);
+                                    } else {
+                                      _openModulePage(
+                                        moduleId: module.id,
+                                        moduleTitle: module.title,
+                                      );
+                                    }
+                                  },
+                                );
+                              }).toList(),
+                            );
+                          },
+                        ),
+                      const SizedBox(height: 12),
+                    ],
                   ),
                 ),
-              ],
+              ),
+            ],
+            body: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: KeyedSubtree(
+                  key: ValueKey(_activeModuleId ?? 'overview'),
+                  child: _buildModuleContent(
+                    context,
+                    moduleId: _activeModuleId,
+                    operationsState: operationsState,
+                    salesState: salesState,
+                    docState: docState,
+                    prState: prState,
+                    accountingState: accountingState,
+                    companyState: companyState,
+                  ),
+                ),
+              ),
             ),
           ),
         );
@@ -214,7 +275,42 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Widget _buildModuleContent({
+  void _openModulePage({
+    required String moduleId,
+    required String moduleTitle,
+  }) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (pageContext) {
+          final operationsState = pageContext.watch<OperationsBloc>().state;
+          final salesState = pageContext.watch<SalesCubit>().state;
+          final docState = pageContext.watch<DocumentCubit>().state;
+          final prState = pageContext.watch<PrCubit>().state;
+          final accountingState = pageContext.watch<AccountingCubit>().state;
+          final companyState = pageContext.watch<CompanyCubit>().state;
+          return Scaffold(
+            appBar: AppBar(title: Text(moduleTitle)),
+            body: Padding(
+              padding: const EdgeInsets.all(16),
+              child: _buildModuleContent(
+                pageContext,
+                moduleId: moduleId,
+                operationsState: operationsState,
+                salesState: salesState,
+                docState: docState,
+                prState: prState,
+                accountingState: accountingState,
+                companyState: companyState,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildModuleContent(
+    BuildContext viewContext, {
     required String? moduleId,
     required OperationsState operationsState,
     required SalesState salesState,
@@ -223,53 +319,95 @@ class _HomePageState extends State<HomePage> {
     required AccountingState accountingState,
     required CompanyState companyState,
   }) {
-    final screenWidth = MediaQuery.of(context).size.width;
+    final screenWidth = MediaQuery.of(viewContext).size.width;
     final isWide = screenWidth > 900;
     final isCompact = screenWidth < 640;
 
     switch (moduleId) {
       case 'sales':
         return _ModuleShell(
-          title: 'Продажи',
-          tabs: const ['Справочники', 'Операции'],
-          children: [
-            _buildSalesReferences(salesState, companyState, isWide, isCompact),
-            _buildSalesOperations(salesState, companyState, isWide),
+          title: 'Товарооборот',
+          tabs: [
+            _ModuleTab(
+              label: 'Продажи',
+              icon: Icons.point_of_sale_outlined,
+              child: _buildSalesOperations(salesState, companyState, isWide),
+            ),
+            _ModuleTab(
+              label: 'Приёмка',
+              icon: Icons.inventory_outlined,
+              child: _buildSalesIntake(salesState, companyState, isWide),
+            ),
+            _ModuleTab(
+              label: 'Регистрация товара',
+              icon: Icons.playlist_add,
+              child: _buildSalesRegistration(salesState, companyState, isWide, isCompact),
+            ),
+            _ModuleTab(
+              label: 'Лиды и поставщики',
+              icon: Icons.group_add_outlined,
+              child: _buildLeadsAndSuppliers(salesState, companyState, isWide),
+            ),
           ],
         );
       case 'docs':
         return _ModuleShell(
           title: 'Документация',
-          tabs: const ['Товарооборот', 'Документы'],
-          children: [
-            _buildDocsCard(docState, companyState, allowedTypes: const [DocumentType.receipt, DocumentType.consumable]),
-            _buildDocsCard(docState, companyState, allowedTypes: const [DocumentType.act, DocumentType.contract]),
+          tabs: [
+            _ModuleTab(
+              label: 'Операции',
+              icon: Icons.swap_horiz,
+              child: _buildDocsForOperations(docState, salesState, companyState),
+            ),
+            _ModuleTab(
+              label: 'Документы',
+              icon: Icons.description_outlined,
+              child: _buildDocsCard(docState, companyState,
+                  allowedTypes: const [DocumentType.act, DocumentType.contract]),
+            ),
           ],
         );
       case 'pr_smm':
         return _ModuleShell(
           title: 'PR / SMM',
-          tabs: const ['Соцсети', 'Коммуникации'],
-          children: [
-            _buildPrSocial(prState, companyState),
-            _buildPrCommunication(prState, companyState),
+          tabs: [
+            _ModuleTab(
+              label: 'Соцсети',
+              icon: Icons.share_outlined,
+              child: _buildPrSocial(prState, companyState),
+            ),
+            _ModuleTab(
+              label: 'Коммуникации',
+              icon: Icons.chat_bubble_outline,
+              child: _buildPrCommunication(prState, companyState),
+            ),
           ],
         );
       case 'finance':
         return _ModuleShell(
           title: 'Бухгалтерия',
-          tabs: const ['Персонал', 'Операционные расходы'],
-          children: [
-            _buildAccountingCard(accountingState, companyState, targetType: 'employee'),
-            _buildAccountingCard(accountingState, companyState, targetType: 'expense'),
+          tabs: [
+            _ModuleTab(
+              label: 'Персонал',
+              icon: Icons.people_outline,
+              child: _buildAccountingCard(accountingState, companyState, targetType: 'employee'),
+            ),
+            _ModuleTab(
+              label: 'Операционные расходы',
+              icon: Icons.receipt_long_outlined,
+              child: _buildAccountingCard(accountingState, companyState, targetType: 'expense'),
+            ),
           ],
         );
       case 'hr':
         return _ModuleShell(
           title: 'Управление персоналом',
-          tabs: const ['Сотрудники'],
-          children: [
-            _buildHrCard(companyState),
+          tabs: [
+            _ModuleTab(
+              label: 'Сотрудники',
+              icon: Icons.badge_outlined,
+              child: _buildHrCard(companyState),
+            ),
           ],
         );
       default:
@@ -324,7 +462,7 @@ class _HomePageState extends State<HomePage> {
     context.read<AccountingCubit>().load(companyId);
   }
 
-  Widget _buildSalesReferences(
+  Widget _buildSalesRegistration(
     SalesState state,
     CompanyState companyState,
     bool isWide,
@@ -342,7 +480,7 @@ class _HomePageState extends State<HomePage> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Номенклатура и лиды',
+                    const Text('Регистрация товара',
                         style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
                     IconButton(
                       onPressed: () => context.read<SalesCubit>().load(companyState.company!.id),
@@ -351,6 +489,8 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                Text('Категории', style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 8),
                 Wrap(
                   spacing: isCompact ? 8 : 12,
                   runSpacing: 12,
@@ -359,33 +499,64 @@ class _HomePageState extends State<HomePage> {
                       width: isWide ? 260 : double.infinity,
                       child: TextField(
                         controller: _categoryController,
-                        decoration: const InputDecoration(labelText: 'Категория товара'),
+                        decoration: const InputDecoration(
+                          labelText: 'Новая категория',
+                          prefixIcon: Icon(Icons.category_outlined),
+                        ),
                         onSubmitted: (_) => _createCategory(context),
                       ),
                     ),
+                    ElevatedButton.icon(
+                      onPressed: state.loading ? null : () => _createCategory(context),
+                      icon: const Icon(Icons.add),
+                      label: state.loading
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('Добавить категорию'),
+                    ),
+                  ],
+                ),
+                const Divider(height: 24),
+                Text('Регистрация товара', style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 8),
+                if (state.categories.isEmpty)
+                  const Text('Нет категорий. Сначала добавьте категорию.')
+                else
+                  Wrap(
+                    spacing: isCompact ? 8 : 12,
+                    runSpacing: 12,
+                    children: [
                     SizedBox(
                       width: isWide ? 260 : double.infinity,
                       child: DropdownButtonFormField<int>(
                         value: _selectedCategoryId,
-                        decoration: const InputDecoration(labelText: 'Категория для товара'),
-                        items: state.categories
-                            .map((c) => DropdownMenuItem(value: c.id, child: Text(c.title)))
-                            .toList(),
-                        onChanged: (value) => setState(() => _selectedCategoryId = value),
+                        decoration: const InputDecoration(
+                          labelText: 'Категория для товара',
+                          prefixIcon: Icon(Icons.category),
+                        ),
+                          items: state.categories
+                              .map((c) => DropdownMenuItem(value: c.id, child: Text(c.title)))
+                              .toList(),
+                          onChanged: (value) => setState(() => _selectedCategoryId = value),
+                        ),
                       ),
-                    ),
                     SizedBox(
                       width: isWide ? 260 : double.infinity,
                       child: TextField(
                         controller: _productTitleController,
-                        decoration: const InputDecoration(labelText: 'Название товара'),
+                        decoration: const InputDecoration(
+                          labelText: 'Название товара',
+                          prefixIcon: Icon(Icons.label_outline),
+                        ),
+                        ),
                       ),
-                    ),
                     SizedBox(
                       width: isWide ? 160 : double.infinity,
                       child: TextField(
                         controller: _productPriceController,
-                        decoration: const InputDecoration(labelText: 'Цена'),
+                        decoration: const InputDecoration(
+                          labelText: 'Цена',
+                          prefixIcon: Icon(Icons.attach_money),
+                        ),
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       ),
                     ),
@@ -393,20 +564,56 @@ class _HomePageState extends State<HomePage> {
                       width: isWide ? 160 : double.infinity,
                       child: TextField(
                         controller: _productStockController,
-                        decoration: const InputDecoration(labelText: 'Количество на складе'),
+                        decoration: const InputDecoration(
+                          labelText: 'Количество на складе',
+                          prefixIcon: Icon(Icons.warehouse_outlined),
+                        ),
                         keyboardType: TextInputType.number,
                       ),
                     ),
-                    ElevatedButton.icon(
-                      onPressed: state.loading ? null : () => _createProduct(context),
-                      icon: const Icon(Icons.inventory_2_outlined),
-                      label: state.loading
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text('Сохранить товар'),
+                      ElevatedButton.icon(
+                        onPressed: state.loading ? null : () => _createProduct(context),
+                        icon: const Icon(Icons.inventory_2_outlined),
+                        label: state.loading
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Text('Сохранить товар'),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLeadsAndSuppliers(
+    SalesState state,
+    CompanyState companyState,
+    bool isWide,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(8),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Лиды и поставщики',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                    IconButton(
+                      onPressed: () => context.read<SalesCubit>().load(companyState.company!.id),
+                      icon: const Icon(Icons.refresh),
                     ),
                   ],
                 ),
-                const Divider(height: 24),
+                const SizedBox(height: 12),
                 Text('Лиды', style: Theme.of(context).textTheme.titleSmall),
                 Wrap(
                   spacing: 12,
@@ -416,21 +623,30 @@ class _HomePageState extends State<HomePage> {
                       width: isWide ? 200 : double.infinity,
                       child: TextField(
                         controller: _leadNameController,
-                        decoration: const InputDecoration(labelText: 'Имя лида'),
+                        decoration: const InputDecoration(
+                          labelText: 'Имя лида',
+                          prefixIcon: Icon(Icons.person_outline),
+                        ),
                       ),
                     ),
                     SizedBox(
                       width: isWide ? 200 : double.infinity,
                       child: TextField(
                         controller: _leadContactController,
-                        decoration: const InputDecoration(labelText: 'Контакты'),
+                        decoration: const InputDecoration(
+                          labelText: 'Контакты',
+                          prefixIcon: Icon(Icons.contact_phone_outlined),
+                        ),
                       ),
                     ),
                     SizedBox(
                       width: isWide ? 180 : double.infinity,
                       child: DropdownButtonFormField<String>(
                         value: _leadStatus,
-                        decoration: const InputDecoration(labelText: 'Статус'),
+                        decoration: const InputDecoration(
+                          labelText: 'Статус',
+                          prefixIcon: Icon(Icons.flag_outlined),
+                        ),
                         items: const [
                           DropdownMenuItem(value: 'new', child: Text('Новый')),
                           DropdownMenuItem(value: 'in_progress', child: Text('В работе')),
@@ -443,12 +659,15 @@ class _HomePageState extends State<HomePage> {
                     SizedBox(
                       width: isWide ? 220 : double.infinity,
                       child: DropdownButtonFormField<int>(
-                        value: _selectedProductId,
-                        decoration: const InputDecoration(labelText: 'Интерес к товару'),
+                        value: _selectedLeadProductId,
+                        decoration: const InputDecoration(
+                          labelText: 'Интерес к товару',
+                          prefixIcon: Icon(Icons.shopping_bag_outlined),
+                        ),
                         items: state.products
                             .map((p) => DropdownMenuItem(value: p.id, child: Text(p.title)))
                             .toList(),
-                        onChanged: (value) => setState(() => _selectedProductId = value),
+                        onChanged: (value) => setState(() => _selectedLeadProductId = value),
                       ),
                     ),
                     ElevatedButton(
@@ -459,6 +678,68 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ],
                 ),
+                const Divider(height: 24),
+                Text('Поставщики', style: Theme.of(context).textTheme.titleSmall),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    SizedBox(
+                      width: isWide ? 200 : double.infinity,
+                      child: TextField(
+                        controller: _supplierNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Название поставщика',
+                          prefixIcon: Icon(Icons.local_shipping_outlined),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: isWide ? 200 : double.infinity,
+                      child: TextField(
+                        controller: _supplierContactController,
+                        decoration: const InputDecoration(
+                          labelText: 'Контакты',
+                          prefixIcon: Icon(Icons.contact_mail_outlined),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: isWide ? 220 : double.infinity,
+                      child: DropdownButtonFormField<int>(
+                        value: _selectedSupplierProductId,
+                        decoration: const InputDecoration(
+                          labelText: 'Поставляет товар',
+                          prefixIcon: Icon(Icons.inventory_2_outlined),
+                        ),
+                        items: state.products
+                            .map((p) => DropdownMenuItem(value: p.id, child: Text(p.title)))
+                            .toList(),
+                        onChanged: (value) => setState(() => _selectedSupplierProductId = value),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: state.loading ? null : () => _createSupplier(context),
+                      child: state.loading
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('Добавить поставщика'),
+                    ),
+                  ],
+                ),
+                if (state.leads.isNotEmpty) ...[
+                  const Divider(height: 24),
+                  Text('Последние лиды и поставщики', style: Theme.of(context).textTheme.titleSmall),
+                  ...state.leads.take(6).map(
+                        (l) => ListTile(
+                          leading: Icon(
+                            l.status == 'supplier' ? Icons.local_shipping_outlined : Icons.person_outline,
+                          ),
+                          title: Text(l.name),
+                          subtitle: Text(l.contact),
+                          trailing: Text(l.status),
+                        ),
+                      ),
+                ],
               ],
             ),
           ),
@@ -472,6 +753,8 @@ class _HomePageState extends State<HomePage> {
     CompanyState companyState,
     bool isWide,
   ) {
+    final leads = state.leads.where((l) => l.status != 'supplier').toList();
+    final saleRecords = state.records.where((r) => r.type == SalesRecordType.sale).toList();
     return ListView(
       padding: const EdgeInsets.all(8),
       children: [
@@ -493,6 +776,14 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Chip(
+                    avatar: const Icon(Icons.sell_outlined),
+                    label: const Text('Тип операции: Продажа'),
+                  ),
+                ),
                 Wrap(
                   spacing: 12,
                   runSpacing: 12,
@@ -501,65 +792,357 @@ class _HomePageState extends State<HomePage> {
                       width: isWide ? 360 : double.infinity,
                       child: DropdownButtonFormField<int>(
                         value: _selectedProductId,
-                        decoration: const InputDecoration(labelText: 'Товар для операции'),
+                        decoration: const InputDecoration(
+                          labelText: 'Товар для операции',
+                          prefixIcon: Icon(Icons.inventory_2_outlined),
+                        ),
                         items: state.products
                             .map((p) => DropdownMenuItem(
                                   value: p.id,
                                   child: Text('${p.title} — ${p.price.toStringAsFixed(0)}'),
                                 ))
                             .toList(),
-                        onChanged: (value) => setState(() => _selectedProductId = value),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedProductId = value;
+                            if (value != null) {
+                              final product = state.products.firstWhere((p) => p.id == value);
+                              _unitPriceController.text = product.price.toStringAsFixed(2);
+                              _updateSalesTotals();
+                            }
+                          });
+                        },
                       ),
                     ),
-                    SizedBox(
-                      width: isWide ? 200 : double.infinity,
-                      child: DropdownButtonFormField<SalesRecordType>(
-                        value: _salesRecordType,
-                        decoration: const InputDecoration(labelText: 'Тип операции'),
-                        items: const [
-                          DropdownMenuItem(value: SalesRecordType.sale, child: Text('Продажа')),
-                          DropdownMenuItem(value: SalesRecordType.income, child: Text('Поступление')),
-                          DropdownMenuItem(value: SalesRecordType.reservation, child: Text('Резерв')), 
-                        ],
-                        onChanged: (value) => setState(() => _salesRecordType = value ?? SalesRecordType.sale),
+                    if (_selectedProductId != null) ...[
+                      SizedBox(
+                        width: isWide ? 260 : double.infinity,
+                      child: DropdownButtonFormField<int?>(
+                        value: _selectedSaleLeadId,
+                        decoration: const InputDecoration(
+                          labelText: 'Лид (необязательно)',
+                          prefixIcon: Icon(Icons.person_outline),
+                        ),
+                        items: [
+                          const DropdownMenuItem<int?>(
+                            value: null,
+                            child: Text('Без лида'),
+                            ),
+                            ...leads.map(
+                              (l) => DropdownMenuItem<int?>(
+                                value: l.id,
+                                child: Text(l.name),
+                              ),
+                            ),
+                          ],
+                          onChanged: (value) => setState(() => _selectedSaleLeadId = value),
+                        ),
                       ),
-                    ),
-                    SizedBox(
-                      width: isWide ? 120 : double.infinity,
+                      TextButton.icon(
+                        onPressed: () => _showCreateLeadDialog(context),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Создать нового лида'),
+                      ),
+                      SizedBox(
+                        width: isWide ? 140 : double.infinity,
                       child: TextField(
                         controller: _recordQuantityController,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'Кол-во'),
+                        decoration: const InputDecoration(
+                          labelText: 'Кол-во',
+                          prefixIcon: Icon(Icons.confirmation_number_outlined),
+                        ),
+                          onChanged: (_) => setState(_updateSalesTotals),
+                        ),
                       ),
-                    ),
-                    SizedBox(
-                      width: isWide ? 160 : double.infinity,
-                      child: TextField(
-                        controller: _amountController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(labelText: 'Сумма/доход'),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _unitPriceController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(decimal: true),
+                                decoration: const InputDecoration(
+                                  labelText: 'Цена за единицу',
+                                  prefixIcon: Icon(Icons.attach_money),
+                                ),
+                                onChanged: (_) => setState(_updateSalesTotals),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextField(
+                                controller: _totalPriceController,
+                                readOnly: true,
+                                enableInteractiveSelection: false,
+                                decoration: const InputDecoration(
+                                  labelText: 'Итог за выбранное кол-во',
+                                  prefixIcon: Icon(Icons.calculate_outlined),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    SizedBox(
-                      width: isWide ? 260 : double.infinity,
+                      SizedBox(
+                        width: isWide ? 280 : double.infinity,
                       child: TextField(
                         controller: _salesNoteController,
-                        decoration: const InputDecoration(labelText: 'Комментарий'),
+                        decoration: const InputDecoration(
+                          labelText: 'Комментарий',
+                          prefixIcon: Icon(Icons.notes_outlined),
+                        ),
+                        maxLines: 2,
                       ),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: state.loading ? null : () => _submitSalesRecord(context),
-                      icon: const Icon(Icons.save_outlined),
-                      label: state.loading
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text('Зафиксировать'),
+                      ),
+                      SizedBox(
+                        width: isWide ? 280 : double.infinity,
+                        child: TextField(
+                          controller: _intakePhotoUrlController,
+                          decoration: const InputDecoration(
+                            labelText: 'Ссылка на фото (опционально)',
+                            prefixIcon: Icon(Icons.photo_camera_outlined),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (_selectedProductId != null) ...[
+                  const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: state.loading ? null : _resetSalesForm,
+                            icon: const Icon(Icons.add),
+                            label: const Text('Добавить ещё товар'),
+                          ),
+                          ElevatedButton.icon(
+                        onPressed: state.loading
+                            ? null
+                            : () => _submitSalesRecord(context, recordType: SalesRecordType.sale),
+                        icon: const Icon(Icons.save_outlined),
+                        label: state.loading
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Text('Зафиксировать операцию'),
+                      ),
+                    ],
+                  ),
+                ],
+                if (saleRecords.isNotEmpty) ...[
+                  const Divider(height: 24),
+                  Text('Последние операции', style: Theme.of(context).textTheme.titleSmall),
+                  ...saleRecords.take(5).map(
+                        (r) => ListTile(
+                          leading: Icon(_iconForRecord(r.type)),
+                          title: Text('${r.type.name} — ${r.amount.toStringAsFixed(2)}'),
+                          subtitle: Text(r.note ?? ''),
+                          trailing: Text(DateFormat('dd.MM HH:mm').format(r.createdAt)),
+                        ),
+                      ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSalesIntake(
+    SalesState state,
+    CompanyState companyState,
+    bool isWide,
+  ) {
+    final suppliers = state.leads.where((l) => l.status == 'supplier').toList();
+    return ListView(
+      padding: const EdgeInsets.all(8),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Приёмка и поступления',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                    IconButton(
+                      onPressed: () => context.read<SalesCubit>().load(companyState.company!.id),
+                      icon: const Icon(Icons.refresh),
                     ),
                   ],
                 ),
-                if (state.records.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Chip(
+                    avatar: const Icon(Icons.inventory_outlined),
+                    label: const Text('Тип операции: Поступление'),
+                  ),
+                ),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    SizedBox(
+                      width: isWide ? 360 : double.infinity,
+                      child: DropdownButtonFormField<int>(
+                        value: _selectedProductId,
+                        decoration: const InputDecoration(
+                          labelText: 'Товар для поступления',
+                          prefixIcon: Icon(Icons.inventory_outlined),
+                        ),
+                        items: state.products
+                            .map((p) => DropdownMenuItem(
+                                  value: p.id,
+                                  child: Text('${p.title} — ${p.price.toStringAsFixed(0)}'),
+                                ))
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedProductId = value;
+                            if (value != null) {
+                              final product = state.products.firstWhere((p) => p.id == value);
+                              _unitPriceController.text = product.price.toStringAsFixed(2);
+                              _updateSalesTotals();
+                            }
+                          });
+                        },
+                      ),
+                    ),
+                    if (_selectedProductId != null) ...[
+                    SizedBox(
+                      width: isWide ? 260 : double.infinity,
+                      child: DropdownButtonFormField<int?>(
+                        value: _selectedIntakeSupplierId,
+                        decoration: const InputDecoration(
+                          labelText: 'Поставщик (необязательно)',
+                          prefixIcon: Icon(Icons.local_shipping_outlined),
+                        ),
+                        items: [
+                          const DropdownMenuItem<int?>(
+                            value: null,
+                            child: Text('Без поставщика'),
+                            ),
+                            ...suppliers.map(
+                              (l) => DropdownMenuItem<int?>(
+                                value: l.id,
+                                child: Text(l.name),
+                              ),
+                            ),
+                          ],
+                          onChanged: (value) => setState(() => _selectedIntakeSupplierId = value),
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => _showCreateSupplierDialog(context),
+                        icon: const Icon(Icons.add_business),
+                        label: const Text('Создать поставщика'),
+                      ),
+                    SizedBox(
+                      width: isWide ? 140 : double.infinity,
+                      child: TextField(
+                        controller: _recordQuantityController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Кол-во',
+                          prefixIcon: Icon(Icons.confirmation_number_outlined),
+                        ),
+                        onChanged: (_) => setState(_updateSalesTotals),
+                      ),
+                    ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _unitPriceController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(decimal: true),
+                                decoration: const InputDecoration(
+                                  labelText: 'Цена закупки',
+                                  prefixIcon: Icon(Icons.attach_money),
+                                ),
+                                onChanged: (_) => setState(_updateSalesTotals),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextField(
+                                controller: _totalPriceController,
+                                readOnly: true,
+                                enableInteractiveSelection: false,
+                                decoration: const InputDecoration(
+                                  labelText: 'Итог за выбранное кол-во',
+                                  prefixIcon: Icon(Icons.calculate_outlined),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(
+                        width: isWide ? 280 : double.infinity,
+                        child: TextField(
+                          controller: _salesNoteController,
+                          decoration: const InputDecoration(
+                            labelText: 'Комментарий',
+                            prefixIcon: Icon(Icons.notes_outlined),
+                          ),
+                          maxLines: 2,
+                        ),
+                      ),
+                      SizedBox(
+                        width: isWide ? 280 : double.infinity,
+                        child: TextField(
+                          controller: _intakePhotoUrlController,
+                          decoration: const InputDecoration(
+                            labelText: 'Ссылка на фото (опционально)',
+                            prefixIcon: Icon(Icons.photo_camera_outlined),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (_selectedProductId != null) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: state.loading ? null : _resetSalesForm,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Добавить ещё товар'),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: state.loading
+                            ? null
+                            : () => _submitSalesRecord(context, recordType: SalesRecordType.income),
+                        icon: const Icon(Icons.archive_outlined),
+                        label: state.loading
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Text('Зарегистрировать поступление'),
+                      ),
+                    ],
+                  ),
+                ],
+                if (state.records.where((r) => r.type == SalesRecordType.income).isNotEmpty) ...[
                   const Divider(height: 24),
-                  Text('Последние операции', style: Theme.of(context).textTheme.titleSmall),
-                  ...state.records.take(5).map(
+                  Text('Последние поступления', style: Theme.of(context).textTheme.titleSmall),
+                  ...state.records
+                      .where((r) => r.type == SalesRecordType.income)
+                      .take(5)
+                      .map(
                         (r) => ListTile(
                           leading: Icon(_iconForRecord(r.type)),
                           title: Text('${r.type.name} — ${r.amount.toStringAsFixed(2)}'),
@@ -606,7 +1189,10 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 8),
                 DropdownButtonFormField<DocumentType>(
                   value: allowedTypes.contains(_documentType) ? _documentType : allowedTypes.first,
-                  decoration: const InputDecoration(labelText: 'Тип документа'),
+                  decoration: const InputDecoration(
+                    labelText: 'Тип документа',
+                    prefixIcon: Icon(Icons.description_outlined),
+                  ),
                   items: allowedTypes
                       .map((type) => DropdownMenuItem(value: type, child: Text(_docTitle(type))))
                       .toList(),
@@ -615,12 +1201,18 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 8),
                 TextField(
                   controller: _docTitleController,
-                  decoration: const InputDecoration(labelText: 'Название / номер документа'),
+                  decoration: const InputDecoration(
+                    labelText: 'Название / номер документа',
+                    prefixIcon: Icon(Icons.tag),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<int>(
                   value: _selectedDocProductId,
-                  decoration: const InputDecoration(labelText: 'Связанный товар (необязательно)'),
+                  decoration: const InputDecoration(
+                    labelText: 'Связанный товар (необязательно)',
+                    prefixIcon: Icon(Icons.inventory_2_outlined),
+                  ),
                   items: context
                       .read<SalesCubit>()
                       .state
@@ -633,7 +1225,10 @@ class _HomePageState extends State<HomePage> {
                 TextField(
                   controller: _docNoteController,
                   maxLines: 2,
-                  decoration: const InputDecoration(labelText: 'Комментарий'),
+                  decoration: const InputDecoration(
+                    labelText: 'Комментарий',
+                    prefixIcon: Icon(Icons.notes_outlined),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 ElevatedButton.icon(
@@ -645,6 +1240,197 @@ class _HomePageState extends State<HomePage> {
                 ),
                 if (filteredDocs.isNotEmpty) ...[
                   const Divider(height: 24),
+                  ...filteredDocs.take(5).map(
+                        (d) => ListTile(
+                          leading: const Icon(Icons.description_outlined),
+                          title: Text('${_docTitle(d.type)} — ${d.title}'),
+                          subtitle: Text(d.note ?? ''),
+                          trailing: Text(DateFormat('dd.MM').format(d.createdAt)),
+                        ),
+                      ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDocsForOperations(
+    DocumentState docState,
+    SalesState salesState,
+    CompanyState companyState,
+  ) {
+    final records = salesState.records
+        .where((r) => r.type == _docOperationTypeFilter)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final filteredDocs = docState.documents
+        .where((d) => d.type == DocumentType.receipt || d.type == DocumentType.consumable)
+        .toList();
+
+    return ListView(
+      padding: const EdgeInsets.all(8),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Документы по операциям',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                    IconButton(
+                      onPressed: () {
+                        context.read<DocumentCubit>().load(companyState.company!.id);
+                        context.read<SalesCubit>().load(companyState.company!.id);
+                      },
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    SizedBox(
+                      width: 240,
+                      child: DropdownButtonFormField<SalesRecordType>(
+                        value: _docOperationTypeFilter,
+                        decoration: const InputDecoration(
+                          labelText: 'Тип операции',
+                          prefixIcon: Icon(Icons.swap_horiz),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: SalesRecordType.sale,
+                            child: Text('Продажа'),
+                          ),
+                          DropdownMenuItem(
+                            value: SalesRecordType.income,
+                            child: Text('Поступление'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _docOperationTypeFilter = value;
+                            _selectedDocRecordId = null;
+                            _selectedDocProductId = null;
+                            _documentType = value == SalesRecordType.income
+                                ? DocumentType.receipt
+                                : DocumentType.consumable;
+                          });
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: 320,
+                      child: DropdownButtonFormField<int>(
+                        value: _selectedDocRecordId,
+                        decoration: InputDecoration(
+                          labelText: records.isEmpty
+                              ? 'Нет операций'
+                              : 'Операция (${records.length})',
+                          prefixIcon: const Icon(Icons.history),
+                        ),
+                        items: records
+                            .map(
+                              (r) => DropdownMenuItem(
+                                value: r.id,
+                                child: Text(
+                                    '#${r.id} • ${r.type.name} • ${r.amount.toStringAsFixed(0)} • ${DateFormat('dd.MM').format(r.createdAt)}'),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedDocRecordId = value;
+                          });
+                          if (value != null) {
+                            final record = records.firstWhere((r) => r.id == value);
+                            _prefillDocumentFromRecord(record);
+                          }
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: 220,
+                      child: DropdownButtonFormField<DocumentType>(
+                        value: _documentType,
+                        decoration: const InputDecoration(
+                          labelText: 'Тип документа',
+                          prefixIcon: Icon(Icons.description_outlined),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: DocumentType.receipt,
+                            child: Text('Накладная/приход'),
+                          ),
+                          DropdownMenuItem(
+                            value: DocumentType.consumable,
+                            child: Text('Расходный документ'),
+                          ),
+                        ],
+                        onChanged: (value) => setState(() {
+                          _documentType = value ?? _documentType;
+                        }),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 260,
+                      child: TextField(
+                        controller: _docTitleController,
+                        decoration: const InputDecoration(
+                          labelText: 'Название / номер документа',
+                          prefixIcon: Icon(Icons.tag),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 260,
+                      child: DropdownButtonFormField<int>(
+                        value: _selectedDocProductId,
+                        decoration: const InputDecoration(
+                          labelText: 'Связанный товар',
+                          prefixIcon: Icon(Icons.inventory_2_outlined),
+                        ),
+                        items: salesState.products
+                            .map((p) => DropdownMenuItem(value: p.id, child: Text(p.title)))
+                            .toList(),
+                        onChanged: (value) => setState(() => _selectedDocProductId = value),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 260,
+                      child: TextField(
+                        controller: _docNoteController,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Комментарий',
+                          prefixIcon: Icon(Icons.notes_outlined),
+                        ),
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: docState.loading || records.isEmpty ? null : () => _createDocument(context),
+                      icon: const Icon(Icons.file_copy_outlined),
+                      label: docState.loading
+                          ? const SizedBox(
+                              width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('Оформить документ'),
+                    ),
+                  ],
+                ),
+                if (filteredDocs.isNotEmpty) ...[
+                  const Divider(height: 24),
+                  Text('Последние документы по операциям',
+                      style: Theme.of(context).textTheme.titleSmall),
                   ...filteredDocs.take(5).map(
                         (d) => ListTile(
                           leading: const Icon(Icons.description_outlined),
@@ -806,21 +1592,68 @@ class _HomePageState extends State<HomePage> {
               const Text('Нет сотрудников. Добавьте их в режиме администратора.')
             else
               ...state.employees.map(
-                (e) => ListTile(
-                  leading: const Icon(Icons.person_outline),
-                  title: Text(e.name),
-                  subtitle: Text('Статус: ${statusLabel(e.status)}'),
-                  trailing:
-                      Text(state.positions.firstWhere((p) => p.id == e.positionId).title),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => _EmployeeDetailsPage(
-                        employee: e,
-                        position: state.positions.firstWhere((p) => p.id == e.positionId),
+                (e) {
+                  final position = state.positions.firstWhere((p) => p.id == e.positionId);
+                  final isExpanded = _expandedEmployeeIds.contains(e.id);
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 6),
+                    child: InkWell(
+                      onTap: () => _toggleEmployeeExpanded(e.id),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: AnimatedSize(
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeInOut,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(Icons.person_outline),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(e.name, style: Theme.of(context).textTheme.titleMedium),
+                                        Text(position.title,
+                                            style: Theme.of(context).textTheme.bodySmall),
+                                        Text('Статус: ${statusLabel(e.status)}',
+                                            style: Theme.of(context).textTheme.bodySmall),
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+                                ],
+                              ),
+                              if (isExpanded) ...[
+                                const SizedBox(height: 10),
+                                Text('Почта: ${e.email}', style: Theme.of(context).textTheme.bodyMedium),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    ElevatedButton.icon(
+                                      onPressed: () => _openChatWithEmployee(e),
+                                      icon: const Icon(Icons.chat),
+                                      label: const Text('Написать'),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    OutlinedButton.icon(
+                                      onPressed: () {},
+                                      icon: const Icon(Icons.task_alt),
+                                      label: const Text('Поручить'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
           ],
         ),
@@ -945,6 +1778,36 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Color _moduleColorForIndex(int index) {
+    const palette = [
+      Colors.blue,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.redAccent,
+      Colors.indigo,
+    ];
+    return palette[index % palette.length];
+  }
+
+  IconData _iconForModule(String moduleId) {
+    switch (moduleId) {
+      case 'sales':
+        return Icons.point_of_sale_outlined;
+      case 'docs':
+        return Icons.description_outlined;
+      case 'pr_smm':
+        return Icons.campaign_outlined;
+      case 'finance':
+        return Icons.receipt_long_outlined;
+      case 'hr':
+        return Icons.badge_outlined;
+      default:
+        return Icons.apps_outlined;
+    }
+  }
+
   String _docTitle(DocumentType type) {
     switch (type) {
       case DocumentType.receipt:
@@ -993,41 +1856,100 @@ class _HomePageState extends State<HomePage> {
     _productStockController.clear();
   }
 
-  Future<void> _submitSalesRecord(BuildContext context) async {
+  Future<void> _submitSalesRecord(
+    BuildContext context, {
+    required SalesRecordType recordType,
+  }) async {
     final quantity = int.tryParse(_recordQuantityController.text) ?? 0;
-    final amount = double.tryParse(_amountController.text) ?? 0;
-    if (quantity <= 0 || amount <= 0) return;
+    final unitAmount = double.tryParse(_unitPriceController.text) ?? 0;
+    if (quantity <= 0 || unitAmount <= 0 || _selectedProductId == null) return;
+    final amount = unitAmount * quantity;
+    final noteParts = <String>[];
+    if (recordType == SalesRecordType.sale && _selectedSaleLeadId != null) {
+      noteParts.add('Лид: $_selectedSaleLeadId');
+    }
+    if (recordType == SalesRecordType.income && _selectedIntakeSupplierId != null) {
+      noteParts.add('Поставщик: $_selectedIntakeSupplierId');
+    }
+    if (recordType == SalesRecordType.income) {
+      final photo = _intakePhotoUrlController.text.trim();
+      if (photo.isNotEmpty) {
+        noteParts.add('Фото: $photo');
+      }
+    }
+    final userNote = _salesNoteController.text.trim();
+    if (userNote.isNotEmpty) noteParts.add(userNote);
+    final combinedNote = noteParts.isNotEmpty ? noteParts.join(' | ') : null;
 
     await context.read<SalesCubit>().addRecord(
-          type: _salesRecordType,
+          type: recordType,
           quantity: quantity,
           amount: amount,
-          note: _salesNoteController.text,
+          note: combinedNote,
           productId: _selectedProductId,
         );
 
-    if (_salesRecordType == SalesRecordType.reservation && _selectedProductId != null) {
-      final salesState = context.read<SalesCubit>().state;
-      final product = salesState.products.firstWhere((p) => p.id == _selectedProductId);
-      final newReserved = product.reserved + quantity;
-      await context.read<SalesCubit>().updateReservation(product.id, newReserved);
-    }
-
     // Пробрасываем запись в фин. учёт
     final operation = Operation(
-      type: _salesRecordType == SalesRecordType.sale
-          ? OperationType.sale
-          : OperationType.purchase,
+      type: recordType == SalesRecordType.sale ? OperationType.sale : OperationType.purchase,
       amount: amount,
-      description: 'Модуль продаж: ${_salesRecordType.name}${_selectedProductId != null ? ' по товару $_selectedProductId' : ''}',
+      description:
+          'Модуль продаж: ${recordType.name}${_selectedProductId != null ? ' по товару $_selectedProductId' : ''}',
       createdAt: DateTime.now(),
     );
     context.read<OperationsBloc>().add(AddOperationRequested(operation));
     context.read<ReportCubit>().refresh();
 
-    _recordQuantityController.text = '1';
-    _amountController.clear();
-    _salesNoteController.clear();
+    setState(() {
+      _recordQuantityController.text = '1';
+      _unitPriceController.clear();
+      _totalPriceController.clear();
+      _selectedProductId = null;
+      _selectedSaleLeadId = null;
+      _selectedIntakeSupplierId = null;
+      _salesNoteController.clear();
+      _intakePhotoUrlController.clear();
+      _recordOwnerIds.clear();
+    });
+  }
+
+  void _prefillDocumentFromRecord(SalesRecord record) {
+    _documentType =
+        record.type == SalesRecordType.income ? DocumentType.receipt : DocumentType.consumable;
+    _selectedDocProductId = record.productId;
+    _selectedDocRecordId = record.id;
+    if (_docTitleController.text.isEmpty) {
+      _docTitleController.text = 'Документ по ${record.type.name} #${record.id}';
+    }
+    if (_docNoteController.text.isEmpty && record.note?.isNotEmpty == true) {
+      _docNoteController.text = record.note!;
+    }
+    setState(() {});
+  }
+
+  void _updateSalesTotals() {
+    final quantity = int.tryParse(_recordQuantityController.text) ?? 0;
+    final unit = double.tryParse(_unitPriceController.text) ?? 0;
+    final total = quantity > 0 && unit > 0 ? quantity * unit : 0;
+    if (total > 0) {
+      _totalPriceController.text = total.toStringAsFixed(2);
+    } else {
+      _totalPriceController.clear();
+    }
+  }
+
+  void _resetSalesForm() {
+    setState(() {
+      _selectedProductId = null;
+      _selectedLeadProductId = null;
+      _selectedSupplierProductId = null;
+      _selectedSaleLeadId = null;
+      _selectedIntakeSupplierId = null;
+      _recordQuantityController.text = '1';
+      _unitPriceController.clear();
+      _totalPriceController.clear();
+      _salesNoteController.clear();
+    });
   }
 
   Future<void> _createLead(BuildContext context) async {
@@ -1037,23 +1959,152 @@ class _HomePageState extends State<HomePage> {
           name: name,
           contact: _leadContactController.text.trim(),
           status: _leadStatus,
-          productId: _selectedProductId,
+          productId: _selectedLeadProductId,
         );
-    _leadNameController.clear();
-    _leadContactController.clear();
+    setState(() {
+      _leadNameController.clear();
+      _leadContactController.clear();
+      _selectedLeadProductId = null;
+    });
+  }
+
+  Future<void> _createSupplier(BuildContext context) async {
+    final name = _supplierNameController.text.trim();
+    if (name.isEmpty) return;
+    await context.read<SalesCubit>().addLead(
+          name: name,
+          contact: _supplierContactController.text.trim(),
+          status: 'supplier',
+          productId: _selectedSupplierProductId,
+        );
+    setState(() {
+      _supplierNameController.clear();
+      _supplierContactController.clear();
+      _selectedSupplierProductId = null;
+    });
+  }
+
+  Future<void> _showCreateLeadDialog(BuildContext context) async {
+    final nameController = TextEditingController();
+    final contactController = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Новый лид'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Имя'),
+            ),
+            TextField(
+              controller: contactController,
+              decoration: const InputDecoration(labelText: 'Контакт'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isEmpty) return;
+              await context.read<SalesCubit>().addLead(
+                    name: name,
+                    contact: contactController.text.trim(),
+                    status: 'new',
+                    productId: null,
+                  );
+              if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+            },
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    nameController.dispose();
+    contactController.dispose();
+  }
+
+  Future<void> _showCreateSupplierDialog(BuildContext context) async {
+    final nameController = TextEditingController();
+    final contactController = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Новый поставщик'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Название'),
+            ),
+            TextField(
+              controller: contactController,
+              decoration: const InputDecoration(labelText: 'Контакты'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isEmpty) return;
+              await context.read<SalesCubit>().addLead(
+                    name: name,
+                    contact: contactController.text.trim(),
+                    status: 'supplier',
+                    productId: null,
+                  );
+              if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+            },
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    nameController.dispose();
+    contactController.dispose();
   }
 
   Future<void> _createDocument(BuildContext context) async {
     final title = _docTitleController.text.trim();
     if (title.isEmpty) return;
+    SalesRecord? linkedRecord;
+    if (_selectedDocRecordId != null) {
+      try {
+        linkedRecord =
+            context.read<SalesCubit>().state.records.firstWhere((r) => r.id == _selectedDocRecordId);
+      } catch (_) {}
+    }
+    final noteParts = <String>[];
+    if (linkedRecord != null) {
+      noteParts.add('Операция #${linkedRecord.id} (${linkedRecord.type.name})');
+    }
+    final userNote = _docNoteController.text.trim();
+    if (userNote.isNotEmpty) noteParts.add(userNote);
+    final combinedNote = noteParts.isNotEmpty ? noteParts.join(' | ') : null;
+    final productId = _selectedDocProductId ?? linkedRecord?.productId;
+
     await context.read<DocumentCubit>().addDocument(
           type: _documentType,
           title: title,
-          note: _docNoteController.text,
-          productId: _selectedDocProductId,
+          note: combinedNote,
+          productId: productId,
         );
     _docTitleController.clear();
     _docNoteController.clear();
+    _selectedDocRecordId = null;
+    _selectedDocProductId = null;
   }
 
   Future<void> _createPrAsset(BuildContext context) async {
@@ -1121,6 +2172,24 @@ class _HomePageState extends State<HomePage> {
       case OperationType.expense:
         return Colors.redAccent;
     }
+  }
+
+  void _toggleEmployeeExpanded(int employeeId) {
+    setState(() {
+      if (_expandedEmployeeIds.contains(employeeId)) {
+        _expandedEmployeeIds.remove(employeeId);
+      } else {
+        _expandedEmployeeIds.add(employeeId);
+      }
+    });
+  }
+
+  void _openChatWithEmployee(Employee employee) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _EmployeeChatPage(employee: employee),
+      ),
+    );
   }
 }
 
@@ -1216,12 +2285,19 @@ class _ModulesOverview extends StatelessWidget {
   }
 }
 
+class _ModuleTab {
+  final String label;
+  final IconData icon;
+  final Widget child;
+
+  const _ModuleTab({required this.label, required this.icon, required this.child});
+}
+
 class _ModuleShell extends StatelessWidget {
   final String title;
-  final List<String> tabs;
-  final List<Widget> children;
+  final List<_ModuleTab> tabs;
 
-  const _ModuleShell({required this.title, required this.tabs, required this.children});
+  const _ModuleShell({required this.title, required this.tabs});
 
   @override
   Widget build(BuildContext context) {
@@ -1237,15 +2313,15 @@ class _ModuleShell extends StatelessWidget {
             ),
             TabBar(
               isScrollable: true,
-              tabs: tabs.map((t) => Tab(text: t)).toList(),
+              tabs: tabs.map((t) => Tab(icon: Icon(t.icon), text: t.label)).toList(),
             ),
             const Divider(height: 1),
             Expanded(
               child: TabBarView(
-                children: children
-                    .map((child) => Padding(
+                children: tabs
+                    .map((tab) => Padding(
                           padding: const EdgeInsets.all(8.0),
-                          child: child,
+                          child: tab.child,
                         ))
                     .toList(),
               ),
@@ -1260,40 +2336,92 @@ class _ModuleShell extends StatelessWidget {
 class _ModuleCard extends StatelessWidget {
   final CRMModule module;
   final bool isSelected;
+  final double width;
+  final Color backgroundColor;
+  final Color accentColor;
+  final IconData leadingIcon;
   final VoidCallback onTap;
 
-  const _ModuleCard({required this.module, required this.isSelected, required this.onTap});
+  const _ModuleCard({
+    required this.module,
+    required this.isSelected,
+    required this.width,
+    required this.backgroundColor,
+    required this.accentColor,
+    required this.leadingIcon,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    const cardHeight = 220.0;
+    final cardColor = isSelected ? accentColor.withOpacity(0.18) : backgroundColor;
+    final borderSide = isSelected ? BorderSide(color: accentColor, width: 1.4) : BorderSide.none;
+
     return SizedBox(
-      width: 220,
+      width: width,
+      height: cardHeight,
       child: Card(
-        color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
+        color: cardColor,
+        shape: RoundedRectangleBorder(
+          side: borderSide,
+          borderRadius: const BorderRadius.all(Radius.circular(12)),
+        ),
         child: InkWell(
           onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Flexible(
-                      child: Text(module.title, style: Theme.of(context).textTheme.titleMedium),
-                    ),
-                    Icon(isSelected ? Icons.visibility : Icons.visibility_outlined),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  module.description ?? 'Модуль CRM',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
+          borderRadius: const BorderRadius.all(Radius.circular(12)),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: cardHeight,
+              maxHeight: cardHeight,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          color: accentColor.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding: const EdgeInsets.all(8),
+                        child: Icon(leadingIcon, color: accentColor),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              module.title,
+                              style: Theme.of(context).textTheme.titleMedium,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text('Модуль CRM', style: Theme.of(context).textTheme.bodySmall),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        isSelected ? Icons.visibility : Icons.chevron_right,
+                        color: accentColor,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    module.description.isNotEmpty ? module.description : 'Модуль CRM',
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1334,6 +2462,92 @@ class _EmployeeDetailsPage extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _EmployeeChatPage extends StatefulWidget {
+  final Employee employee;
+
+  const _EmployeeChatPage({required this.employee});
+
+  @override
+  State<_EmployeeChatPage> createState() => _EmployeeChatPageState();
+}
+
+class _EmployeeChatPageState extends State<_EmployeeChatPage> {
+  final _messageController = TextEditingController();
+  final List<String> _messages = [];
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  void _sendMessage() {
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
+    setState(() {
+      _messages.add(text);
+      _messageController.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Чат с ${widget.employee.name}')),
+      body: Column(
+        children: [
+          Expanded(
+            child: _messages.isEmpty
+                ? const Center(child: Text('Нет сообщений'))
+                : ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _messages.length,
+                    itemBuilder: (context, index) {
+                      final message = _messages[index];
+                      return Align(
+                        alignment: Alignment.centerRight,
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(message),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    decoration: const InputDecoration(
+                      hintText: 'Сообщение',
+                      border: OutlineInputBorder(),
+                    ),
+                    onSubmitted: (_) => _sendMessage(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: _sendMessage,
+                  child: const Icon(Icons.send),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

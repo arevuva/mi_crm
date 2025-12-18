@@ -23,7 +23,12 @@ class DocumentCubit extends Cubit<DocumentState> {
     }
   }
 
-  Future<void> addDocument({required DocumentType type, required String title, String? note, int? productId}) async {
+  Future<void> addDocument(
+      {required DocumentType type,
+      required String title,
+      String? note,
+      int? productId,
+      List<int> ownerIds = const []}) async {
     if (_companyId == null) return;
     emit(state.copyWith(loading: true, error: null));
     try {
@@ -33,6 +38,7 @@ class DocumentCubit extends Cubit<DocumentState> {
         title: title,
         note: note,
         productId: productId,
+        ownerIds: ownerIds,
       );
       final docs = await _repository.fetchDocuments(_companyId!);
       emit(state.copyWith(loading: false, documents: docs));

@@ -10,6 +10,7 @@ class SalesRecord extends Equatable {
   final double amount;
   final String? note;
   final int? productId;
+  final List<int> ownerIds;
   final DateTime createdAt;
 
   const SalesRecord({
@@ -21,12 +22,19 @@ class SalesRecord extends Equatable {
     required this.createdAt,
     this.note,
     this.productId,
+    this.ownerIds = const [],
   });
 
   factory SalesRecord.fromMap(Map<String, dynamic> map) => SalesRecord(
         id: map['id'] as int,
         companyId: map['company_id'] as int,
         productId: map['product_id'] as int?,
+        ownerIds: ((map['owner_ids'] as String?) ?? '')
+            .split(',')
+            .where((e) => e.trim().isNotEmpty)
+            .map((e) => int.tryParse(e) ?? 0)
+            .where((e) => e > 0)
+            .toList(),
         type: SalesRecordType.values.firstWhere(
           (e) => e.name == map['type'] as String,
           orElse: () => SalesRecordType.sale,
@@ -41,6 +49,7 @@ class SalesRecord extends Equatable {
         'id': id,
         'company_id': companyId,
         'product_id': productId,
+        'owner_ids': ownerIds.join(','),
         'type': type.name,
         'quantity': quantity,
         'amount': amount,
@@ -49,5 +58,6 @@ class SalesRecord extends Equatable {
       };
 
   @override
-  List<Object?> get props => [id, companyId, productId, type, quantity, amount, note, createdAt];
+  List<Object?> get props =>
+      [id, companyId, productId, ownerIds, type, quantity, amount, note, createdAt];
 }

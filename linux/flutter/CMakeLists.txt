@@ -1,71 +1,88 @@
+# This file controls Flutter-level build steps. It should not be edited.
 cmake_minimum_required(VERSION 3.10)
 
 set(EPHEMERAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ephemeral")
 
-# Ensure the ephemeral directory exists even if Flutter tooling hasn't run yet.
-if(NOT EXISTS "${EPHEMERAL_DIR}")
-  file(MAKE_DIRECTORY "${EPHEMERAL_DIR}")
-endif()
+# Configuration provided via flutter tool.
+include(${EPHEMERAL_DIR}/generated_config.cmake)
 
-if(NOT EXISTS "${EPHEMERAL_DIR}/generated_config.cmake")
-  message(FATAL_ERROR "The Flutter tooling was not detected. Run `flutter build linux` or `flutter run` to generate the platform files.")
-endif()
+# TODO: Move the rest of this into files in ephemeral. See
+# https://github.com/flutter/flutter/issues/57146.
 
-include("${EPHEMERAL_DIR}/generated_config.cmake" OPTIONAL)
+# Serves the same purpose as list(TRANSFORM ... PREPEND ...),
+# which isn't available in 3.10.
+function(list_prepend LIST_NAME PREFIX)
+    set(NEW_LIST "")
+    foreach(element ${${LIST_NAME}})
+        list(APPEND NEW_LIST "${PREFIX}${element}")
+    endforeach(element)
+    set(${LIST_NAME} "${NEW_LIST}" PARENT_SCOPE)
+endfunction()
 
-set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-include("${FLUTTER_MANAGED_DIR}/generated_plugins.cmake" OPTIONAL)
+# === Flutter Library ===
+# System-level dependencies.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
+pkg_check_modules(GLIB REQUIRED IMPORTED_TARGET glib-2.0)
+pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
 
-# Fallbacks so CMake configuration succeeds even before Flutter generates files.
-if(NOT DEFINED FLUTTER_ASSEMBLY_OUTPUTS OR "${FLUTTER_ASSEMBLY_OUTPUTS}" STREQUAL "")
-  set(FLUTTER_ASSEMBLY_OUTPUTS "${EPHEMERAL_DIR}/flutter_assemble.stamp")
-endif()
-if(NOT DEFINED FLUTTER_TOOL_ENVIRONMENT)
-  set(FLUTTER_TOOL_ENVIRONMENT "")
-endif()
+set(FLUTTER_LIBRARY "${EPHEMERAL_DIR}/libflutter_linux_gtk.so")
 
-if(DEFINED FLUTTER_ROOT AND EXISTS "${FLUTTER_ROOT}/packages/flutter_tools/bin/tool_backend.sh")
-  add_custom_target(flutter_assemble DEPENDS ${FLUTTER_ASSEMBLY_OUTPUTS})
-  add_custom_command(OUTPUT ${FLUTTER_ASSEMBLY_OUTPUTS}
-    COMMAND ${CMAKE_COMMAND} -E env ${FLUTTER_TOOL_ENVIRONMENT}
-      "${FLUTTER_ROOT}/packages/flutter_tools/bin/tool_backend.sh" linux-x64 ${FLUTTER_TOOL_ARGS}
-    VERBATIM)
-else()
-  add_custom_target(flutter_assemble ALL
-    COMMAND ${CMAKE_COMMAND} -E touch ${FLUTTER_ASSEMBLY_OUTPUTS}
-    BYPRODUCTS ${FLUTTER_ASSEMBLY_OUTPUTS}
-    COMMENT "Flutter tooling not found; creating placeholder assemble outputs.")
-endif()
+# Published to parent scope for install step.
+set(FLUTTER_LIBRARY ${FLUTTER_LIBRARY} PARENT_SCOPE)
+set(FLUTTER_ICU_DATA_FILE "${EPHEMERAL_DIR}/icudtl.dat" PARENT_SCOPE)
+set(PROJECT_BUILD_DIR "${PROJECT_DIR}/build/" PARENT_SCOPE)
+set(AOT_LIBRARY "${PROJECT_DIR}/build/lib/libapp.so" PARENT_SCOPE)
 
+list(APPEND FLUTTER_LIBRARY_HEADERS
+  "fl_basic_message_channel.h"
+  "fl_binary_codec.h"
+  "fl_binary_messenger.h"
+  "fl_dart_project.h"
+  "fl_engine.h"
+  "fl_json_message_codec.h"
+  "fl_json_method_codec.h"
+  "fl_message_codec.h"
+  "fl_method_call.h"
+  "fl_method_channel.h"
+  "fl_method_codec.h"
+  "fl_method_response.h"
+  "fl_plugin_registrar.h"
+  "fl_plugin_registry.h"
+  "fl_standard_message_codec.h"
+  "fl_standard_method_codec.h"
+  "fl_string_codec.h"
+  "fl_value.h"
+  "fl_view.h"
+  "flutter_linux.h"
+)
+list_prepend(FLUTTER_LIBRARY_HEADERS "${EPHEMERAL_DIR}/flutter_linux/")
 add_library(flutter INTERFACE)
-add_dependencies(flutter flutter_assemble)
-
 target_include_directories(flutter INTERFACE
   "${EPHEMERAL_DIR}"
 )
-
+target_link_libraries(flutter INTERFACE "${FLUTTER_LIBRARY}")
 target_link_libraries(flutter INTERFACE
-  "${FLUTTER_EPHEMERAL_LIB_DIR}/libflutter_linux_gtk.so"
+  PkgConfig::GTK
+  PkgConfig::GLIB
+  PkgConfig::GIO
 )
+add_dependencies(flutter flutter_assemble)
 
-if(NOT COMMAND apply_standard_settings)
-  function(apply_standard_settings TARGET)
-    set_target_properties(${TARGET} PROPERTIES
-      CXX_STANDARD 17
-      CXX_STANDARD_REQUIRED YES
-      CXX_EXTENSIONS NO
-      POSITION_INDEPENDENT_CODE ON)
-  endfunction()
-endif()
-
-if(NOT COMMAND auto_assign_icu_data)
-  function(auto_assign_icu_data TARGET)
-    # No-op fallback; Flutter tooling normally sets ICU data on install.
-  endfunction()
-endif()
-
-if(NOT COMMAND flutter_install_all)
-  function(flutter_install_all TARGET)
-    # Fallback so install step remains valid when tooling isn't present.
-  endfunction()
-endif()
+# === Flutter tool backend ===
+# _phony_ is a non-existent file to force this command to run every time,
+# since currently there's no way to get a full input/output list from the
+# flutter tool.
+add_custom_command(
+  OUTPUT ${FLUTTER_LIBRARY} ${FLUTTER_LIBRARY_HEADERS}
+    ${CMAKE_CURRENT_BINARY_DIR}/_phony_
+  COMMAND ${CMAKE_COMMAND} -E env
+    ${FLUTTER_TOOL_ENVIRONMENT}
+    "${FLUTTER_ROOT}/packages/flutter_tools/bin/tool_backend.sh"
+      ${FLUTTER_TARGET_PLATFORM} ${CMAKE_BUILD_TYPE}
+  VERBATIM
+)
+add_custom_target(flutter_assemble DEPENDS
+  "${FLUTTER_LIBRARY}"
+  ${FLUTTER_LIBRARY_HEADERS}
+)

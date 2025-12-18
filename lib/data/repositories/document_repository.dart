@@ -12,6 +12,7 @@ class DocumentRepository {
     required String title,
     String? note,
     int? productId,
+    List<int> ownerIds = const [],
   }) async {
     final id = await _db.addDocument(
       companyId: companyId,
@@ -19,6 +20,7 @@ class DocumentRepository {
       title: title,
       note: note,
       productId: productId,
+      ownerIds: ownerIds.isEmpty ? null : ownerIds.join(','),
     );
 
     return DocumentEntry(
@@ -28,6 +30,7 @@ class DocumentRepository {
       title: title,
       note: note,
       productId: productId,
+      ownerIds: ownerIds,
       createdAt: DateTime.now(),
     );
   }

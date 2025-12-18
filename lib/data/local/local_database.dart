@@ -23,7 +23,7 @@ class LocalDatabase {
     final path = join(docsDir.path, 'mi_crm.db');
     return openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE users (
@@ -39,6 +39,7 @@ class LocalDatabase {
             type TEXT,
             amount REAL,
             description TEXT,
+            owner_ids TEXT,
             created_at INTEGER
           );
         ''');
@@ -57,6 +58,11 @@ class LocalDatabase {
         }
         if (oldVersion < 4) {
           await _upgradeEmployeesWithEmail(db);
+        }
+        if (oldVersion < 5) {
+          await db.execute('ALTER TABLE operations ADD COLUMN owner_ids TEXT');
+          await db.execute('ALTER TABLE sales_records ADD COLUMN owner_ids TEXT');
+          await db.execute('ALTER TABLE documents ADD COLUMN owner_ids TEXT');
         }
       },
     );
@@ -411,6 +417,7 @@ class LocalDatabase {
     required double amount,
     String? note,
     int? productId,
+    String? ownerIds,
   }) async {
     final db = await database;
     return db.insert('sales_records', {
@@ -420,6 +427,7 @@ class LocalDatabase {
       'quantity': quantity,
       'amount': amount,
       'note': note,
+      'owner_ids': ownerIds,
       'created_at': DateTime.now().millisecondsSinceEpoch,
     });
   }
@@ -435,6 +443,7 @@ class LocalDatabase {
     required String title,
     String? note,
     int? productId,
+    String? ownerIds,
   }) async {
     final db = await database;
     return db.insert('documents', {
@@ -443,6 +452,7 @@ class LocalDatabase {
       'type': type,
       'title': title,
       'note': note,
+      'owner_ids': ownerIds,
       'created_at': DateTime.now().millisecondsSinceEpoch,
     });
   }

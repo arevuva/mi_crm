@@ -86,6 +86,7 @@ class SalesCubit extends Cubit<SalesState> {
     required double amount,
     String? note,
     int? productId,
+    List<int> ownerIds = const [],
   }) async {
     if (_companyId == null) return;
     emit(state.copyWith(loading: true, error: null));
@@ -97,6 +98,7 @@ class SalesCubit extends Cubit<SalesState> {
         amount: amount,
         note: note,
         productId: productId,
+        ownerIds: ownerIds,
       );
       final records = await _repository.fetchSalesRecords(_companyId!);
       emit(state.copyWith(loading: false, records: records));

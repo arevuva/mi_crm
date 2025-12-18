@@ -9,6 +9,7 @@ class DocumentEntry extends Equatable {
   final String title;
   final String? note;
   final int? productId;
+  final List<int> ownerIds;
   final DateTime createdAt;
 
   const DocumentEntry({
@@ -19,12 +20,19 @@ class DocumentEntry extends Equatable {
     required this.createdAt,
     this.note,
     this.productId,
+    this.ownerIds = const [],
   });
 
   factory DocumentEntry.fromMap(Map<String, dynamic> map) => DocumentEntry(
         id: map['id'] as int,
         companyId: map['company_id'] as int,
         productId: map['product_id'] as int?,
+        ownerIds: ((map['owner_ids'] as String?) ?? '')
+            .split(',')
+            .where((e) => e.trim().isNotEmpty)
+            .map((e) => int.tryParse(e) ?? 0)
+            .where((e) => e > 0)
+            .toList(),
         type: DocumentType.values.firstWhere(
           (e) => e.name == map['type'] as String,
           orElse: () => DocumentType.receipt,
@@ -41,9 +49,10 @@ class DocumentEntry extends Equatable {
         'type': type.name,
         'title': title,
         'note': note,
+        'owner_ids': ownerIds.join(','),
         'created_at': createdAt.millisecondsSinceEpoch,
       };
 
   @override
-  List<Object?> get props => [id, companyId, productId, type, title, note, createdAt];
+  List<Object?> get props => [id, companyId, productId, ownerIds, type, title, note, createdAt];
 }

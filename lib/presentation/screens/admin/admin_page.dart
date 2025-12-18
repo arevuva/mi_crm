@@ -89,7 +89,10 @@ class _CompanyBlockState extends State<_CompanyBlock> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: _companyController,
-                    decoration: const InputDecoration(labelText: 'Название компании'),
+                    decoration: const InputDecoration(
+                      labelText: 'Название компании',
+                      prefixIcon: Icon(Icons.business),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   ElevatedButton.icon(
@@ -227,12 +230,18 @@ class _ModuleConfig extends StatelessWidget {
               const SizedBox(height: 12),
               TextField(
                 controller: titleController,
-                decoration: const InputDecoration(labelText: 'Название'),
+                decoration: const InputDecoration(
+                  labelText: 'Название',
+                  prefixIcon: Icon(Icons.short_text),
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: descriptionController,
-                decoration: const InputDecoration(labelText: 'Описание'),
+                decoration: const InputDecoration(
+                  labelText: 'Описание',
+                  prefixIcon: Icon(Icons.notes),
+                ),
                 minLines: 2,
                 maxLines: 4,
               ),
@@ -326,7 +335,10 @@ class _PositionBlockState extends State<_PositionBlock> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _titleController,
-                  decoration: const InputDecoration(labelText: 'Название должности'),
+                  decoration: const InputDecoration(
+                    labelText: 'Название должности',
+                    prefixIcon: Icon(Icons.badge_outlined),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Align(
@@ -409,7 +421,10 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
                   value: _positionId,
-                  decoration: const InputDecoration(labelText: 'Должность'),
+                  decoration: const InputDecoration(
+                    labelText: 'Должность',
+                    prefixIcon: Icon(Icons.work_outline),
+                  ),
                   items: state.positions
                       .map((p) => DropdownMenuItem(value: p.id, child: Text(p.title)))
                       .toList(),
@@ -418,13 +433,19 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _emailController,
-                  decoration: const InputDecoration(labelText: 'Рабочий email'),
+                  decoration: const InputDecoration(
+                    labelText: 'Рабочий email',
+                    prefixIcon: Icon(Icons.email_outlined),
+                  ),
                   keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _nameController,
-                  decoration: const InputDecoration(labelText: 'ФИО сотрудника'),
+                  decoration: const InputDecoration(
+                    labelText: 'ФИО сотрудника',
+                    prefixIcon: Icon(Icons.person_outline),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 ElevatedButton.icon(

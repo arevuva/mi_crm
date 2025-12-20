@@ -442,12 +442,29 @@ class _ModuleReportPageState extends State<_ModuleReportPage> {
                         else
                           ..._filteredDocs(documentState.documents)
                               .map(
-                                (d) => ListTile(
-                                  leading: const Icon(Icons.description_outlined),
-                                  title: Text('${_docLabel(d.type)} — ${d.title}'),
-                                  subtitle: Text(d.note ?? ''),
-                                  trailing: Text(DateFormat('dd.MM.y HH:mm').format(d.createdAt)),
-                                ),
+                                (d) {
+                                  final participantNames = d.ownerIds
+                                      .map((id) {
+                                        final match = companyState.employees.where((e) => e.id == id);
+                                        return match.isNotEmpty ? match.first.name : null;
+                                      })
+                                      .whereType<String>()
+                                      .join(', ');
+                                  return ListTile(
+                                    leading: const Icon(Icons.description_outlined),
+                                    title: Text('${_docLabel(d.type)} — ${d.title}'),
+                                    subtitle: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        if ((d.note ?? '').isNotEmpty) Text(d.note!),
+                                        if (participantNames.isNotEmpty)
+                                          Text('Участники: $participantNames',
+                                              style: Theme.of(context).textTheme.bodySmall),
+                                      ],
+                                    ),
+                                    trailing: Text(DateFormat('dd.MM.y HH:mm').format(d.createdAt)),
+                                  );
+                                },
                               )
                               .toList(),
                       ],
@@ -472,9 +489,32 @@ class _ModuleReportPageState extends State<_ModuleReportPage> {
                               title: Text(e.name),
                               subtitle: Text(
                                   'Статус: ${statusLabel(e.status)} • Email: ${e.email.isEmpty ? '—' : e.email}'),
-                              trailing: Text(companyState.positions
-                                  .firstWhere((p) => p.id == e.positionId)
-                                  .title),
+                              trailing: Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(companyState.positions
+                                      .firstWhere((p) => p.id == e.positionId)
+                                      .title),
+                                  Builder(
+                                    builder: (_) {
+                                      final dept = companyState.departments
+                                          .where((d) => d.id == e.departmentId)
+                                          .toList();
+                                      if (dept.isEmpty) return const SizedBox.shrink();
+                                      final position =
+                                          companyState.positions.firstWhere((p) => p.id == e.positionId);
+                                      final isHead = position.isHead;
+                                      return Text(
+                                        isHead
+                                            ? 'Отдел: ${dept.first.title} (глава)'
+                                            : 'Отдел: ${dept.first.title}',
+                                        style: Theme.of(context).textTheme.bodySmall,
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                       ],

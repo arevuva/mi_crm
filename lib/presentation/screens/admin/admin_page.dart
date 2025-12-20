@@ -7,6 +7,7 @@ import '../../../blocs/modules/module_cubit.dart';
 import '../../../blocs/modules/module_state.dart';
 import '../../../data/models/employee.dart';
 import '../../../data/models/module.dart';
+import '../../../data/models/position.dart';
 import '../../utils/status_labels.dart';
 
 class AdminPage extends StatefulWidget {
@@ -37,6 +38,8 @@ class _AdminPageState extends State<AdminPage> {
             _CompanyBlock(),
             SizedBox(height: 16),
             _ModuleConfig(),
+            SizedBox(height: 16),
+            _DepartmentsBlock(),
             SizedBox(height: 16),
             _PositionBlock(),
             SizedBox(height: 16),
@@ -275,6 +278,93 @@ class _ModuleConfig extends StatelessWidget {
   }
 }
 
+class _DepartmentsBlock extends StatefulWidget {
+  const _DepartmentsBlock();
+
+  @override
+  State<_DepartmentsBlock> createState() => _DepartmentsBlockState();
+}
+
+class _DepartmentsBlockState extends State<_DepartmentsBlock> {
+  final _titleController = TextEditingController();
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<CompanyCubit, CompanyState>(
+      builder: (context, state) {
+        if (state.company == null) return const SizedBox.shrink();
+
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Отделы', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(
+                    labelText: 'Название отдела',
+                    prefixIcon: Icon(Icons.apartment_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: state.loading
+                      ? null
+                      : () {
+                          final title = _titleController.text.trim();
+                          if (title.isEmpty) return;
+                          context.read<CompanyCubit>().addDepartment(title);
+                          _titleController.clear();
+                        },
+                  icon: const Icon(Icons.add_business_outlined),
+                  label: state.loading
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Создать отдел'),
+                ),
+                const SizedBox(height: 8),
+                if (state.departments.isNotEmpty)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Divider(),
+                      Text('Существующие отделы', style: Theme.of(context).textTheme.titleSmall),
+                      ...state.departments.map((d) {
+                        final headCandidates = state.employees.where((e) {
+                          if (e.departmentId != d.id) return false;
+                          final pos = state.positions.firstWhere((p) => p.id == e.positionId);
+                          return pos.isHead;
+                        }).toList();
+                        final headName = headCandidates.isEmpty ? null : headCandidates.first.name;
+                        final count = state.employees.where((e) => e.departmentId == d.id).length;
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(d.title),
+                          subtitle: Text(
+                            headName == null ? 'Руководитель ещё не назначен' : 'Руководитель: $headName',
+                          ),
+                          trailing: Text('$count сотрудн.'),
+                        );
+                      }),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _PositionBlock extends StatefulWidget {
   const _PositionBlock();
 
@@ -285,6 +375,7 @@ class _PositionBlock extends StatefulWidget {
 class _PositionBlockState extends State<_PositionBlock> {
   final _titleController = TextEditingController();
   final Set<String> _selectedModules = {};
+  bool _isHead = false;
 
   @override
   void dispose() {
@@ -340,6 +431,15 @@ class _PositionBlockState extends State<_PositionBlock> {
                     prefixIcon: Icon(Icons.badge_outlined),
                   ),
                 ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  value: _isHead,
+                  onChanged: (value) => setState(() => _isHead = value),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Это должность главы отдела'),
+                  subtitle: const Text('В каждом отделе может быть только один сотрудник с этой должностью'),
+                  secondary: const Icon(Icons.workspace_premium_outlined),
+                ),
                 const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerLeft,
@@ -351,9 +451,10 @@ class _PositionBlockState extends State<_PositionBlock> {
                             if (title.isNotEmpty) {
                               context
                                   .read<CompanyCubit>()
-                                  .addPosition(title, _selectedModules.toList());
+                                  .addPosition(title, _selectedModules.toList(), isHead: _isHead);
                               _titleController.clear();
                               _selectedModules.clear();
+                              _isHead = false;
                               setState(() {});
                             }
                           },
@@ -373,10 +474,111 @@ class _PositionBlockState extends State<_PositionBlock> {
                         (p) => ListTile(
                           title: Text(p.title),
                           subtitle: Text('Доступы: ${p.modules.join(', ')}'),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (p.isHead) const Chip(label: Text('Глава отдела')),
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined),
+                                onPressed: () => _openEditPosition(context, p),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
                   ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _openEditPosition(BuildContext context, Position position) {
+    final titleController = TextEditingController(text: position.title);
+    final modules = {...position.modules};
+    bool isHead = position.isHead;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            left: 16,
+            right: 16,
+            top: 16,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Редактировать должность', style: Theme.of(ctx).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                BlocBuilder<ModuleCubit, ModuleState>(
+                  builder: (context, moduleState) {
+                    final availableModules = moduleState.modules.where((m) => m.enabled).toList();
+                    return Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: availableModules
+                          .map((m) => FilterChip(
+                                label: Text(m.title),
+                                selected: modules.contains(m.id),
+                                onSelected: (value) {
+                                  setState(() {
+                                    if (value) {
+                                      modules.add(m.id);
+                                    } else {
+                                      modules.remove(m.id);
+                                    }
+                                  });
+                                },
+                              ))
+                          .toList(),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: titleController,
+                  decoration: const InputDecoration(
+                    labelText: 'Название должности',
+                    prefixIcon: Icon(Icons.badge_outlined),
+                  ),
+                ),
+                SwitchListTile(
+                  value: isHead,
+                  onChanged: (value) => setState(() => isHead = value),
+                  title: const Text('Это должность главы отдела'),
+                  secondary: const Icon(Icons.workspace_premium_outlined),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      final title = titleController.text.trim();
+                      if (title.isEmpty) return;
+                      context.read<CompanyCubit>().updatePositionEntry(
+                            Position(
+                              id: position.id,
+                              companyId: position.companyId,
+                              title: title,
+                              modules: modules.toList(),
+                              isHead: isHead,
+                            ),
+                          );
+                      Navigator.of(ctx).pop();
+                    },
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('Сохранить изменения'),
+                  ),
+                ),
+                const SizedBox(height: 16),
               ],
             ),
           ),
@@ -397,6 +599,7 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   int? _positionId;
+  int? _departmentId;
 
   @override
   void dispose() {
@@ -418,6 +621,23 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Сотрудники', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                if (state.departments.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: Text('Сначала создайте отдел, чтобы добавить сотрудников.'),
+                  ),
+                DropdownButtonFormField<int>(
+                  value: _departmentId,
+                  decoration: const InputDecoration(
+                    labelText: 'Отдел',
+                    prefixIcon: Icon(Icons.apartment_outlined),
+                  ),
+                  items: state.departments
+                      .map((d) => DropdownMenuItem(value: d.id, child: Text(d.title)))
+                      .toList(),
+                  onChanged: (value) => setState(() => _departmentId = value),
+                ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
                   value: _positionId,
@@ -451,19 +671,23 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
                 ElevatedButton.icon(
                   onPressed: state.loading
                       ? null
-                          : () {
+                      : () {
                           final name = _nameController.text.trim();
                           final email = _emailController.text.trim();
-                          if (name.isEmpty || email.isEmpty || _positionId == null) return;
+                          if (name.isEmpty || email.isEmpty || _positionId == null || _departmentId == null) return;
                           context.read<CompanyCubit>().addEmployee(
                                 email: email,
                                 name: name,
                                 positionId: _positionId!,
+                                departmentId: _departmentId!,
                                 status: EmployeeStatus.onsite,
                               );
                           _nameController.clear();
                           _emailController.clear();
-                            },
+                          _departmentId = null;
+                          _positionId = null;
+                          setState(() {});
+                        },
                   icon: const Icon(Icons.person_add_alt),
                   label: state.loading
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
@@ -478,8 +702,28 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
                       children: [
                         Text('Email: ${employee.email}'),
                         Text('Должность: ${state.positions.firstWhere((p) => p.id == employee.positionId).title}'),
+                        Builder(
+                          builder: (_) {
+                            final deptCandidates =
+                                state.departments.where((d) => d.id == employee.departmentId).toList();
+                            final deptTitle = deptCandidates.isNotEmpty ? deptCandidates.first.title : 'не назначен';
+                            final pos = state.positions.firstWhere((p) => p.id == employee.positionId);
+                            final isHead = pos.isHead;
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Отдел: $deptTitle'),
+                                if (isHead) const Text('Роль: Руководитель отдела'),
+                              ],
+                            );
+                          },
+                        ),
                         Text('Статус сотрудника: ${statusLabel(employee.status)}'),
                       ],
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => _openEditEmployee(context, state, employee),
                     ),
                   ),
                 ),
@@ -491,4 +735,118 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
     );
   }
 
+}
+
+void _openEditEmployee(BuildContext context, CompanyState state, Employee employee) {
+  final nameController = TextEditingController(text: employee.name);
+  final emailController = TextEditingController(text: employee.email);
+  int positionId = employee.positionId;
+  int? departmentId = employee.departmentId ?? (state.departments.isNotEmpty ? state.departments.first.id : null);
+  EmployeeStatus status = employee.status;
+
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (ctx) {
+      return Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          left: 16,
+          right: 16,
+          top: 16,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Редактировать сотрудника', style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                value: departmentId,
+                decoration: const InputDecoration(
+                  labelText: 'Отдел',
+                  prefixIcon: Icon(Icons.apartment_outlined),
+                ),
+                items: state.departments
+                    .map((d) => DropdownMenuItem(value: d.id, child: Text(d.title)))
+                    .toList(),
+                onChanged: (value) => departmentId = value,
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                value: positionId,
+                decoration: const InputDecoration(
+                  labelText: 'Должность',
+                  prefixIcon: Icon(Icons.work_outline),
+                ),
+                items: state.positions
+                    .map((p) => DropdownMenuItem(value: p.id, child: Text(p.title)))
+                    .toList(),
+                onChanged: (value) => positionId = value ?? positionId,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: emailController,
+                decoration: const InputDecoration(
+                  labelText: 'Рабочий email',
+                  prefixIcon: Icon(Icons.email_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'ФИО сотрудника',
+                  prefixIcon: Icon(Icons.person_outline),
+                ),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<EmployeeStatus>(
+                value: status,
+                decoration: const InputDecoration(
+                  labelText: 'Статус',
+                  prefixIcon: Icon(Icons.emoji_people_outlined),
+                ),
+                items: EmployeeStatus.values
+                    .map((s) => DropdownMenuItem(
+                          value: s,
+                          child: Text(statusLabel(s)),
+                        ))
+                    .toList(),
+                onChanged: (value) => status = value ?? status,
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    final name = nameController.text.trim();
+                    final email = emailController.text.trim();
+                    if (name.isEmpty || email.isEmpty || departmentId == null) return;
+                    context.read<CompanyCubit>().updateEmployeeEntry(
+                          Employee(
+                            id: employee.id,
+                            companyId: employee.companyId,
+                            positionId: positionId,
+                            departmentId: departmentId,
+                            email: email,
+                            name: name,
+                            status: status,
+                            userId: employee.userId,
+                          ),
+                        );
+                    Navigator.of(ctx).pop();
+                  },
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('Сохранить'),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 }

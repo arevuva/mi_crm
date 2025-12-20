@@ -1231,6 +1231,30 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 const SizedBox(height: 8),
+                if (companyState.employees.isNotEmpty) ...[
+                  Text('Участники', style: Theme.of(context).textTheme.titleSmall),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: companyState.employees
+                        .map(
+                          (e) => FilterChip(
+                            label: Text(e.name),
+                            selected: _docOwnerIds.contains(e.id),
+                            onSelected: (value) => setState(() {
+                              if (value) {
+                                _docOwnerIds.add(e.id);
+                              } else {
+                                _docOwnerIds.remove(e.id);
+                              }
+                            }),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                const SizedBox(height: 8),
                 ElevatedButton.icon(
                   onPressed: state.loading ? null : () => _createDocument(context),
                   icon: const Icon(Icons.file_copy_outlined),
@@ -1864,6 +1888,11 @@ class _HomePageState extends State<HomePage> {
     final unitAmount = double.tryParse(_unitPriceController.text) ?? 0;
     if (quantity <= 0 || unitAmount <= 0 || _selectedProductId == null) return;
     final amount = unitAmount * quantity;
+    final companyState = context.read<CompanyCubit>().state;
+    final authState = context.read<AuthBloc>().state;
+    final currentEmployee = companyState.company == null
+        ? null
+        : _findEmployeeForUser(companyState, authState);
     final noteParts = <String>[];
     if (recordType == SalesRecordType.sale && _selectedSaleLeadId != null) {
       noteParts.add('Лид: $_selectedSaleLeadId');
@@ -1880,6 +1909,11 @@ class _HomePageState extends State<HomePage> {
     final userNote = _salesNoteController.text.trim();
     if (userNote.isNotEmpty) noteParts.add(userNote);
     final combinedNote = noteParts.isNotEmpty ? noteParts.join(' | ') : null;
+    final ownerIds = _recordOwnerIds.isNotEmpty
+        ? _recordOwnerIds.toList()
+        : currentEmployee != null
+            ? [currentEmployee.id]
+            : <int>[];
 
     await context.read<SalesCubit>().addRecord(
           type: recordType,
@@ -1887,6 +1921,7 @@ class _HomePageState extends State<HomePage> {
           amount: amount,
           note: combinedNote,
           productId: _selectedProductId,
+          ownerIds: ownerIds,
         );
 
     // Пробрасываем запись в фин. учёт
@@ -1895,6 +1930,7 @@ class _HomePageState extends State<HomePage> {
       amount: amount,
       description:
           'Модуль продаж: ${recordType.name}${_selectedProductId != null ? ' по товару $_selectedProductId' : ''}',
+      ownerIds: ownerIds,
       createdAt: DateTime.now(),
     );
     context.read<OperationsBloc>().add(AddOperationRequested(operation));
@@ -2100,11 +2136,13 @@ class _HomePageState extends State<HomePage> {
           title: title,
           note: combinedNote,
           productId: productId,
+          ownerIds: _docOwnerIds.toList(),
         );
     _docTitleController.clear();
     _docNoteController.clear();
     _selectedDocRecordId = null;
     _selectedDocProductId = null;
+    _docOwnerIds.clear();
   }
 
   Future<void> _createPrAsset(BuildContext context) async {

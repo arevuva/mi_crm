@@ -56,7 +56,11 @@ class _ProfileContentState extends State<_ProfileContent> {
           child: ListTile(
             leading: const CircleAvatar(child: Icon(Icons.person)),
             title: Text(widget.user.email),
-            subtitle: Text(employee != null ? 'Должность: ${_positionTitle(companyState, employee)}' : 'Рабочая почта'),
+            subtitle: Text(
+              employee != null
+                  ? 'Должность: ${_positionTitle(companyState, employee)} • Отдел: ${_departmentTitle(companyState, employee)}'
+                  : 'Рабочая почта',
+            ),
           ),
         );
 
@@ -197,6 +201,17 @@ class _ProfileContentState extends State<_ProfileContent> {
       return state.positions.firstWhere((p) => p.id == employee.positionId).title;
     } catch (_) {
       return 'Сотрудник';
+    }
+  }
+
+  String _departmentTitle(CompanyState state, Employee employee) {
+    try {
+      final dept = state.departments.firstWhere((d) => d.id == employee.departmentId);
+      final pos = state.positions.firstWhere((p) => p.id == employee.positionId);
+      final isHead = pos.isHead;
+      return isHead ? '${dept.title} (глава)' : dept.title;
+    } catch (_) {
+      return '—';
     }
   }
 }

@@ -23,7 +23,7 @@ class LocalDatabase {
     final path = join(docsDir.path, 'mi_crm.db');
     return openDatabase(
       path,
-      version: 5,
+      version: 7,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE users (
@@ -63,6 +63,28 @@ class LocalDatabase {
           await db.execute('ALTER TABLE operations ADD COLUMN owner_ids TEXT');
           await db.execute('ALTER TABLE sales_records ADD COLUMN owner_ids TEXT');
           await db.execute('ALTER TABLE documents ADD COLUMN owner_ids TEXT');
+        }
+        if (oldVersion < 6) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS departments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              company_id INTEGER,
+              title TEXT,
+              head_employee_id INTEGER
+            );
+          ''');
+          final columns = await db.rawQuery('PRAGMA table_info(employees);');
+          final hasDepartment = columns.any((row) => row['name'] == 'department_id');
+          if (!hasDepartment) {
+            await db.execute('ALTER TABLE employees ADD COLUMN department_id INTEGER;');
+          }
+        }
+        if (oldVersion < 7) {
+          final columns = await db.rawQuery('PRAGMA table_info(positions);');
+          final hasIsHead = columns.any((row) => row['name'] == 'is_head');
+          if (!hasIsHead) {
+            await db.execute('ALTER TABLE positions ADD COLUMN is_head INTEGER DEFAULT 0;');
+          }
         }
       },
     );
@@ -148,7 +170,17 @@ class LocalDatabase {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         company_id INTEGER,
         title TEXT,
-        modules TEXT
+        modules TEXT,
+        is_head INTEGER DEFAULT 0
+      );
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS departments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company_id INTEGER,
+        title TEXT,
+        head_employee_id INTEGER
       );
     ''');
 
@@ -160,6 +192,7 @@ class LocalDatabase {
         name TEXT,
         position_id INTEGER,
         status TEXT,
+        department_id INTEGER,
         user_id INTEGER
       );
     ''');
@@ -204,6 +237,7 @@ class LocalDatabase {
         quantity INTEGER,
         amount REAL,
         note TEXT,
+        owner_ids TEXT,
         created_at INTEGER
       );
     ''');
@@ -216,6 +250,7 @@ class LocalDatabase {
         type TEXT,
         title TEXT,
         note TEXT,
+        owner_ids TEXT,
         created_at INTEGER
       );
     ''');
@@ -276,6 +311,11 @@ class LocalDatabase {
     });
   }
 
+  Future<void> updateCompanyName({required int id, required String name}) async {
+    final db = await database;
+    await db.update('companies', {'name': name}, where: 'id = ?', whereArgs: [id]);
+  }
+
   Future<Map<String, dynamic>?> fetchCompany() async {
     final db = await database;
     final rows = await db.query('companies', limit: 1, orderBy: 'id ASC');
@@ -283,18 +323,48 @@ class LocalDatabase {
     return rows.first;
   }
 
-  Future<int> addPosition({required int companyId, required String title, required List<String> modules}) async {
+  Future<int> addPosition({
+    required int companyId,
+    required String title,
+    required List<String> modules,
+    bool isHead = false,
+  }) async {
     final db = await database;
     return db.insert('positions', {
       'company_id': companyId,
       'title': title,
       'modules': modules.join(','),
+      'is_head': isHead ? 1 : 0,
     });
+  }
+
+  Future<void> updatePosition({
+    required int id,
+    required String title,
+    required List<String> modules,
+    required bool isHead,
+  }) async {
+    final db = await database;
+    await db.update(
+      'positions',
+      {
+        'title': title,
+        'modules': modules.join(','),
+        'is_head': isHead ? 1 : 0,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<List<Map<String, dynamic>>> fetchPositions(int companyId) async {
     final db = await database;
     return db.query('positions', where: 'company_id = ?', whereArgs: [companyId], orderBy: 'id DESC');
+  }
+
+  Future<void> deletePosition(int id) async {
+    final db = await database;
+    await db.delete('positions', where: 'id = ?', whereArgs: [id]);
   }
 
   Future<int> addEmployee({
@@ -303,6 +373,7 @@ class LocalDatabase {
     required String name,
     required int positionId,
     required String status,
+    required int departmentId,
   }) async {
     final db = await database;
     return db.insert('employees', {
@@ -311,6 +382,7 @@ class LocalDatabase {
       'name': name,
       'position_id': positionId,
       'status': status,
+      'department_id': departmentId,
     });
   }
 
@@ -339,6 +411,73 @@ class LocalDatabase {
   Future<void> updateEmployeeStatus(int employeeId, String status) async {
     final db = await database;
     await db.update('employees', {'status': status}, where: 'id = ?', whereArgs: [employeeId]);
+  }
+
+  Future<void> updateEmployee({
+    required int id,
+    required String email,
+    required String name,
+    required int positionId,
+    required int departmentId,
+    required String status,
+  }) async {
+    final db = await database;
+    await db.update(
+      'employees',
+      {
+        'email': email,
+        'name': name,
+        'position_id': positionId,
+        'department_id': departmentId,
+        'status': status,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<void> deleteEmployee(int id) async {
+    final db = await database;
+    await db.delete('employees', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<int> addDepartment({required int companyId, required String title}) async {
+    final db = await database;
+    return db.insert('departments', {
+      'company_id': companyId,
+      'title': title,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> fetchDepartments(int companyId) async {
+    final db = await database;
+    return db.query('departments', where: 'company_id = ?', whereArgs: [companyId], orderBy: 'id DESC');
+  }
+
+  Future<Map<String, dynamic>?> fetchDepartment(int departmentId) async {
+    final db = await database;
+    final rows = await db.query('departments', where: 'id = ?', whereArgs: [departmentId], limit: 1);
+    if (rows.isEmpty) return null;
+    return rows.first;
+  }
+
+  Future<void> deleteDepartment(int id) async {
+    final db = await database;
+    await db.delete('departments', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> setDepartmentHeadIfEmpty({required int departmentId, required int headEmployeeId}) async {
+    final db = await database;
+    final current = await fetchDepartment(departmentId);
+    if (current == null) return;
+    if (current['head_employee_id'] == null) {
+      await db.update(
+        'departments',
+        {'head_employee_id': headEmployeeId},
+        where: 'id = ?',
+        whereArgs: [departmentId],
+      );
+    }
   }
 
   Future<int> addCategory({required int companyId, required String title}) async {

@@ -101,11 +101,7 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         const SizedBox(height: 4),
                         OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const AdminPage()),
-                            );
-                          },
+                          onPressed: () => _requestAdminPassword(context),
                           icon: const Icon(Icons.admin_panel_settings_outlined),
                           label: const Text('Режим администратора'),
                         ),
@@ -120,4 +116,41 @@ class _LoginPageState extends State<LoginPage> {
       ),
     );
   }
+}
+
+void _requestAdminPassword(BuildContext context) {
+  final controller = TextEditingController();
+  showDialog<void>(
+    context: context,
+    builder: (ctx) {
+      return AlertDialog(
+        title: const Text('Пароль администратора'),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: 'Введите пароль',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Отмена')),
+          ElevatedButton(
+            onPressed: () {
+              if (controller.text == 'admin') {
+                Navigator.of(ctx).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AdminPage()),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Неверный пароль')),
+                );
+              }
+            },
+            child: const Text('Войти'),
+          ),
+        ],
+      );
+    },
+  );
 }

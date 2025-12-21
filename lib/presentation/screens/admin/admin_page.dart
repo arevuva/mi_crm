@@ -5,9 +5,11 @@ import '../../../blocs/company/company_cubit.dart';
 import '../../../blocs/company/company_state.dart';
 import '../../../blocs/modules/module_cubit.dart';
 import '../../../blocs/modules/module_state.dart';
+import '../../../data/models/department.dart';
 import '../../../data/models/employee.dart';
 import '../../../data/models/module.dart';
 import '../../../data/models/position.dart';
+import '../../constants/module_submodules.dart';
 import '../../utils/status_labels.dart';
 
 class AdminPage extends StatefulWidget {
@@ -128,7 +130,12 @@ class _CompanyBlockState extends State<_CompanyBlock> {
                   children: [
                     const Icon(Icons.business_center_outlined),
                     const SizedBox(width: 8),
-                    Text(state.company!.name, style: Theme.of(context).textTheme.titleMedium),
+                    Expanded(child: Text(state.company!.name, style: Theme.of(context).textTheme.titleMedium)),
+                    IconButton(
+                      onPressed: () => _openRenameDialog(context, state),
+                      icon: const Icon(Icons.edit_outlined),
+                      tooltip: 'Переименовать компанию',
+                    ),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -140,6 +147,54 @@ class _CompanyBlockState extends State<_CompanyBlock> {
                   ),
               ],
             ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _openRenameDialog(BuildContext context, CompanyState state) {
+    final controller = TextEditingController(text: state.company?.name ?? '');
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            left: 16,
+            right: 16,
+            top: 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Переименовать компанию', style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  labelText: 'Новое название',
+                  prefixIcon: Icon(Icons.drive_file_rename_outline),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    final name = controller.text.trim();
+                    if (name.isEmpty || state.company == null) return;
+                    context.read<CompanyCubit>().renameCompany(name);
+                    Navigator.of(ctx).pop();
+                  },
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('Сохранить'),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
           ),
         );
       },
@@ -351,13 +406,134 @@ class _DepartmentsBlockState extends State<_DepartmentsBlock> {
                           subtitle: Text(
                             headName == null ? 'Руководитель ещё не назначен' : 'Руководитель: $headName',
                           ),
-                          trailing: Text('$count сотрудн.'),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('$count сотрудн.'),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline),
+                                tooltip: 'Удалить отдел',
+                                onPressed: () => _confirmDeleteDepartment(context, state, d),
+                              ),
+                            ],
+                          ),
                         );
                       }),
                     ],
                   ),
               ],
             ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _confirmDeleteDepartment(BuildContext context, CompanyState state, Department department) {
+    final employeesInDepartment = state.employees.where((e) => e.departmentId == department.id).toList();
+    final otherDepartments = state.departments.where((d) => d.id != department.id).toList();
+
+    if (employeesInDepartment.isEmpty) {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Удалить отдел?'),
+          content: Text('Вы действительно хотите удалить отдел "${department.title}"?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Отмена')),
+            ElevatedButton(
+              onPressed: () {
+                context
+                    .read<CompanyCubit>()
+                    .deleteDepartment(department.id, employeeReassignments: const <int, int>{});
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Удалить'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    if (otherDepartments.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Создайте ещё один отдел, чтобы перенести сотрудников.')),
+      );
+      return;
+    }
+
+    final Map<int, int> assignments = {
+      for (final employee in employeesInDepartment) employee.id: otherDepartments.first.id,
+    };
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            left: 16,
+            right: 16,
+            top: 16,
+          ),
+          child: StatefulBuilder(
+            builder: (ctx, setSheetState) {
+              return SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Распределите сотрудников', style: Theme.of(ctx).textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    Text('Отдел "${department.title}" будет удалён. Выберите, куда перенести сотрудников.'),
+                    const SizedBox(height: 12),
+                    ...employeesInDepartment.map(
+                      (employee) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(employee.name)),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: DropdownButtonFormField<int>(
+                                value: assignments[employee.id],
+                                items: otherDepartments
+                                    .map((d) => DropdownMenuItem(value: d.id, child: Text(d.title)))
+                                    .toList(),
+                                onChanged: (value) =>
+                                    setSheetState(() => assignments[employee.id] = value ?? assignments[employee.id]!),
+                                decoration: const InputDecoration(
+                                  labelText: 'Новый отдел',
+                                  prefixIcon: Icon(Icons.apartment_outlined),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          context.read<CompanyCubit>().deleteDepartment(
+                                department.id,
+                                employeeReassignments: assignments,
+                              );
+                        },
+                        icon: const Icon(Icons.delete_forever_outlined),
+                        label: const Text('Удалить отдел и перенести сотрудников'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              );
+            },
           ),
         );
       },
@@ -375,6 +551,7 @@ class _PositionBlock extends StatefulWidget {
 class _PositionBlockState extends State<_PositionBlock> {
   final _titleController = TextEditingController();
   final Set<String> _selectedModules = {};
+  final Map<String, Set<String>> _selectedSubmodules = {};
   bool _isHead = false;
 
   @override
@@ -402,28 +579,74 @@ class _PositionBlockState extends State<_PositionBlock> {
                 BlocBuilder<ModuleCubit, ModuleState>(
                   builder: (context, moduleState) {
                     final availableModules = moduleState.modules.where((m) => m.enabled).toList();
-                    return Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: availableModules
-                          .map((m) => FilterChip(
-                                label: Text(m.title),
-                                selected: _selectedModules.contains(m.id),
-                                onSelected: (value) {
-                                  setState(() {
-                                    if (value) {
-                                      _selectedModules.add(m.id);
-                                    } else {
-                                      _selectedModules.remove(m.id);
-                                    }
-                                  });
-                                },
-                              ))
-                          .toList(),
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: availableModules
+                              .map((m) => FilterChip(
+                                    label: Text(m.title),
+                                    selected: _selectedModules.contains(m.id),
+                                    onSelected: (value) {
+                                      setState(() {
+                                        if (value) {
+                                          _selectedModules.add(m.id);
+                                          final submods = moduleSubmodules[m.id] ?? const [];
+                                          _selectedSubmodules[m.id] =
+                                              submods.isEmpty ? <String>{} : submods.map((s) => s.id).toSet();
+                                        } else {
+                                          _selectedModules.remove(m.id);
+                                          _selectedSubmodules.remove(m.id);
+                                        }
+                                      });
+                                    },
+                                  ))
+                              .toList(),
+                        ),
+                        const SizedBox(height: 12),
+                        ..._selectedModules
+                            .where((moduleId) => (moduleSubmodules[moduleId] ?? []).isNotEmpty)
+                            .map(
+                              (moduleId) => Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Подмодули: ${moduleState.modules.firstWhere((m) => m.id == moduleId).title}'),
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: (moduleSubmodules[moduleId] ?? [])
+                                          .map(
+                                            (sub) => FilterChip(
+                                              label: Text(sub.title),
+                                              selected: _selectedSubmodules[moduleId]?.contains(sub.id) ?? false,
+                                              onSelected: (value) {
+                                                setState(() {
+                                                  final set = _selectedSubmodules[moduleId] ?? <String>{};
+                                                  if (value) {
+                                                    set.add(sub.id);
+                                                  } else {
+                                                    set.remove(sub.id);
+                                                  }
+                                                  _selectedSubmodules[moduleId] = set;
+                                                });
+                                              },
+                                            ),
+                                          )
+                                          .toList(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                      ],
                     );
                   },
                 ),
-                const SizedBox(height: 12),
                 TextField(
                   controller: _titleController,
                   decoration: const InputDecoration(
@@ -449,11 +672,22 @@ class _PositionBlockState extends State<_PositionBlock> {
                         : () {
                             final title = _titleController.text.trim();
                             if (title.isNotEmpty) {
+                              final Map<String, List<String>> selectedSubmodules = {
+                                for (final entry in _selectedSubmodules.entries)
+                                  if (_selectedModules.contains(entry.key))
+                                    entry.key: entry.value.toList(),
+                              };
                               context
                                   .read<CompanyCubit>()
-                                  .addPosition(title, _selectedModules.toList(), isHead: _isHead);
+                                  .addPosition(
+                                    title,
+                                    _selectedModules.toList(),
+                                    isHead: _isHead,
+                                    submodules: selectedSubmodules,
+                                  );
                               _titleController.clear();
                               _selectedModules.clear();
+                              _selectedSubmodules.clear();
                               _isHead = false;
                               setState(() {});
                             }
@@ -473,11 +707,20 @@ class _PositionBlockState extends State<_PositionBlock> {
                       ...companyState.positions.map(
                         (p) => ListTile(
                           title: Text(p.title),
-                          subtitle: Text('Доступы: ${p.modules.join(', ')}'),
+                          subtitle: Text([
+                            'Доступы: ${p.modules.join(', ')}',
+                            if (p.submodules.isNotEmpty)
+                              'Подмодули: ${p.submodules.entries.map((e) => '${e.key}: ${e.value.join(', ')}').join(' | ')}',
+                          ].join('\n')),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               if (p.isHead) const Chip(label: Text('Глава отдела')),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline),
+                                onPressed: () => _confirmDeletePosition(context, p),
+                                tooltip: 'Удалить должность',
+                              ),
                               IconButton(
                                 icon: const Icon(Icons.edit_outlined),
                                 onPressed: () => _openEditPosition(context, p),
@@ -496,9 +739,37 @@ class _PositionBlockState extends State<_PositionBlock> {
     );
   }
 
+  void _confirmDeletePosition(BuildContext context, Position position) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Удалить должность?'),
+        content: Text('Вы уверены, что хотите удалить должность "${position.title}"?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Отмена')),
+          ElevatedButton(
+            onPressed: () {
+              context.read<CompanyCubit>().deletePosition(position);
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _openEditPosition(BuildContext context, Position position) {
     final titleController = TextEditingController(text: position.title);
     final modules = {...position.modules};
+    final Map<String, Set<String>> submodules = {
+      for (final entry in position.submodules.entries) entry.key: entry.value.toSet(),
+    };
+    for (final moduleId in modules) {
+      if (!submodules.containsKey(moduleId) && (moduleSubmodules[moduleId] ?? []).isNotEmpty) {
+        submodules[moduleId] = moduleSubmodules[moduleId]!.map((s) => s.id).toSet();
+      }
+    }
     bool isHead = position.isHead;
     showModalBottomSheet<void>(
       context: context,
@@ -521,24 +792,71 @@ class _PositionBlockState extends State<_PositionBlock> {
                 BlocBuilder<ModuleCubit, ModuleState>(
                   builder: (context, moduleState) {
                     final availableModules = moduleState.modules.where((m) => m.enabled).toList();
-                    return Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: availableModules
-                          .map((m) => FilterChip(
-                                label: Text(m.title),
-                                selected: modules.contains(m.id),
-                                onSelected: (value) {
-                                  setState(() {
-                                    if (value) {
-                                      modules.add(m.id);
-                                    } else {
-                                      modules.remove(m.id);
-                                    }
-                                  });
-                                },
-                              ))
-                          .toList(),
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: availableModules
+                              .map((m) => FilterChip(
+                                    label: Text(m.title),
+                                    selected: modules.contains(m.id),
+                                    onSelected: (value) {
+                                      setState(() {
+                                        if (value) {
+                                          modules.add(m.id);
+                                          final submods = moduleSubmodules[m.id] ?? const [];
+                                          submodules[m.id] =
+                                              submods.isEmpty ? <String>{} : submods.map((s) => s.id).toSet();
+                                        } else {
+                                          modules.remove(m.id);
+                                          submodules.remove(m.id);
+                                        }
+                                      });
+                                    },
+                                  ))
+                              .toList(),
+                        ),
+                        const SizedBox(height: 12),
+                        ...modules
+                            .where((moduleId) => (moduleSubmodules[moduleId] ?? []).isNotEmpty)
+                            .map(
+                              (moduleId) => Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Подмодули: ${moduleState.modules.firstWhere((m) => m.id == moduleId).title}'),
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: (moduleSubmodules[moduleId] ?? [])
+                                          .map(
+                                            (sub) => FilterChip(
+                                              label: Text(sub.title),
+                                              selected: submodules[moduleId]?.contains(sub.id) ?? false,
+                                              onSelected: (value) {
+                                                setState(() {
+                                                  final set = submodules[moduleId] ?? <String>{};
+                                                  if (value) {
+                                                    set.add(sub.id);
+                                                  } else {
+                                                    set.remove(sub.id);
+                                                  }
+                                                  submodules[moduleId] = set;
+                                                });
+                                              },
+                                            ),
+                                          )
+                                          .toList(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                      ],
                     );
                   },
                 ),
@@ -563,6 +881,10 @@ class _PositionBlockState extends State<_PositionBlock> {
                     onPressed: () {
                       final title = titleController.text.trim();
                       if (title.isEmpty) return;
+                      final Map<String, List<String>> selectedSubmodules = {
+                        for (final entry in submodules.entries)
+                          if (modules.contains(entry.key)) entry.key: entry.value.toList(),
+                      };
                       context.read<CompanyCubit>().updatePositionEntry(
                             Position(
                               id: position.id,
@@ -570,6 +892,7 @@ class _PositionBlockState extends State<_PositionBlock> {
                               title: title,
                               modules: modules.toList(),
                               isHead: isHead,
+                              submodules: selectedSubmodules,
                             ),
                           );
                       Navigator.of(ctx).pop();
@@ -606,6 +929,26 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
     _nameController.dispose();
     _emailController.dispose();
     super.dispose();
+  }
+
+  void _confirmDeleteEmployee(BuildContext context, Employee employee) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Удалить сотрудника?'),
+        content: Text('Вы уверены, что хотите удалить ${employee.name}?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Отмена')),
+          ElevatedButton(
+            onPressed: () {
+              context.read<CompanyCubit>().deleteEmployee(employee.id);
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -718,12 +1061,34 @@ class _EmployeesBlockState extends State<_EmployeesBlock> {
                             );
                           },
                         ),
+                        Row(
+                          children: [
+                            const Text('Аккаунт: '),
+                            Chip(
+                              label: Text(employee.userId != null ? 'зарегистрирован' : 'не зарегистрирован'),
+                              avatar: Icon(
+                                employee.userId != null ? Icons.check_circle_outline : Icons.error_outline,
+                                color: employee.userId != null ? Colors.green : Colors.orange,
+                              ),
+                            ),
+                          ],
+                        ),
                         Text('Статус сотрудника: ${statusLabel(employee.status)}'),
                       ],
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => _openEditEmployee(context, state, employee),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          tooltip: 'Удалить сотрудника',
+                          onPressed: () => _confirmDeleteEmployee(context, employee),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: () => _openEditEmployee(context, state, employee),
+                        ),
+                      ],
                     ),
                   ),
                 ),

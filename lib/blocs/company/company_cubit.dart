@@ -66,7 +66,12 @@ class CompanyCubit extends Cubit<CompanyState> {
     }
   }
 
-  Future<void> addPosition(String title, List<String> modules, {bool isHead = false}) async {
+  Future<void> addPosition(
+    String title,
+    List<String> modules, {
+    bool isHead = false,
+    Map<String, List<String>> submodules = const {},
+  }) async {
     if (state.company == null) return;
     emit(state.copyWith(loading: true, error: null));
     try {
@@ -75,6 +80,7 @@ class CompanyCubit extends Cubit<CompanyState> {
         title: title,
         modules: modules,
         isHead: isHead,
+        submodules: submodules,
       );
       final positions = await _repository.fetchPositions(state.company!.id);
       emit(state.copyWith(loading: false, positions: positions));

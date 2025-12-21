@@ -53,7 +53,6 @@ class _RegisterPageState extends State<RegisterPage> {
                       const SizedBox(height: 8),
                       const Text(
                         'Регистрация доступна только по рабочей почте, которую выдал администратор компании.',
-                        style: TextStyle(color: Colors.black54),
                       ),
                       const SizedBox(height: 24),
                       if (state is Unauthenticated && state.message != null)

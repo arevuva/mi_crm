@@ -26,6 +26,8 @@ import '../../../data/models/operation.dart';
 import '../../../data/models/product.dart';
 import '../../../data/models/position.dart';
 import '../../../data/models/sales_record.dart';
+import '../../../data/models/employee_message.dart';
+import '../../../data/repositories/employee_communication_repository.dart';
 import '../../utils/status_labels.dart';
 import '../../widgets/operation_card.dart';
 
@@ -77,6 +79,7 @@ class _HomePageState extends State<HomePage> {
   String _accountingTargetType = 'product';
   int? _loadedCompanyId;
   String? _activeModuleId;
+  final EmployeeCommunicationRepository _communicationRepository = EmployeeCommunicationRepository();
 
   @override
   void dispose() {
@@ -210,7 +213,7 @@ class _HomePageState extends State<HomePage> {
                               runSpacing: spacing,
                               children: availableModules.asMap().entries.map((entry) {
                                 final module = entry.value;
-                                final accentColor = _moduleColorForIndex(entry.key);
+                                final accentColor = moduleColorForIndex(entry.key);
                                 return _ModuleCard(
                                   module: module,
                                   isSelected: useInlineModuleLayout && module.id == _activeModuleId,
@@ -254,6 +257,8 @@ class _HomePageState extends State<HomePage> {
                     prState: prState,
                     accountingState: accountingState,
                     companyState: companyState,
+                    position: position,
+                    currentEmployee: currentEmployee,
                   ),
                 ),
               ),
@@ -288,20 +293,38 @@ class _HomePageState extends State<HomePage> {
           final prState = pageContext.watch<PrCubit>().state;
           final accountingState = pageContext.watch<AccountingCubit>().state;
           final companyState = pageContext.watch<CompanyCubit>().state;
+          final authState = pageContext.watch<AuthBloc>().state;
+          final employee = _findEmployeeForUser(companyState, authState);
+          Position? position;
+          if (employee != null) {
+            try {
+              position = companyState.positions.firstWhere((p) => p.id == employee.positionId);
+            } catch (_) {
+              if (companyState.positions.isNotEmpty) {
+                position = companyState.positions.first;
+              }
+            }
+          }
           return Scaffold(
             appBar: AppBar(title: Text(moduleTitle)),
             body: Padding(
               padding: const EdgeInsets.all(16),
-              child: _buildModuleContent(
-                pageContext,
-                moduleId: moduleId,
-                operationsState: operationsState,
-                salesState: salesState,
-                docState: docState,
-                prState: prState,
-                accountingState: accountingState,
-                companyState: companyState,
-              ),
+              child: position == null || employee == null
+                  ? const Center(
+                      child: Text('Не удалось определить должность пользователя для доступа к модулю.'),
+                    )
+                  : _buildModuleContent(
+                      pageContext,
+                      moduleId: moduleId,
+                      operationsState: operationsState,
+                      salesState: salesState,
+                      docState: docState,
+                      prState: prState,
+                      accountingState: accountingState,
+                      companyState: companyState,
+                      position: position,
+                      currentEmployee: employee,
+                    ),
             ),
           );
         },
@@ -318,6 +341,8 @@ class _HomePageState extends State<HomePage> {
     required PrState prState,
     required AccountingState accountingState,
     required CompanyState companyState,
+    required Position position,
+    required Employee currentEmployee,
   }) {
     final screenWidth = MediaQuery.of(viewContext).size.width;
     final isWide = screenWidth > 900;
@@ -325,94 +350,136 @@ class _HomePageState extends State<HomePage> {
 
     switch (moduleId) {
       case 'sales':
+        final tabs = [
+          _ModuleTab(
+            id: 'sales',
+            label: 'Продажи',
+            icon: Icons.point_of_sale_outlined,
+            child: _buildSalesOperations(salesState, companyState, isWide),
+          ),
+          _ModuleTab(
+            id: 'intake',
+            label: 'Приёмка',
+            icon: Icons.inventory_outlined,
+            child: _buildSalesIntake(salesState, companyState, isWide),
+          ),
+          _ModuleTab(
+            id: 'product_registration',
+            label: 'Регистрация товара',
+            icon: Icons.playlist_add,
+            child: _buildSalesRegistration(salesState, companyState, isWide, isCompact),
+          ),
+          _ModuleTab(
+            id: 'leads',
+            label: 'Лиды и поставщики',
+            icon: Icons.group_add_outlined,
+            child: _buildLeadsAndSuppliers(salesState, companyState, isWide),
+          ),
+        ];
+        final visibleTabs = _filterTabsForPosition('sales', tabs, position);
+        if (visibleTabs.isEmpty) return _restrictedModuleNotice('Товарооборот');
         return _ModuleShell(
           title: 'Товарооборот',
-          tabs: [
-            _ModuleTab(
-              label: 'Продажи',
-              icon: Icons.point_of_sale_outlined,
-              child: _buildSalesOperations(salesState, companyState, isWide),
-            ),
-            _ModuleTab(
-              label: 'Приёмка',
-              icon: Icons.inventory_outlined,
-              child: _buildSalesIntake(salesState, companyState, isWide),
-            ),
-            _ModuleTab(
-              label: 'Регистрация товара',
-              icon: Icons.playlist_add,
-              child: _buildSalesRegistration(salesState, companyState, isWide, isCompact),
-            ),
-            _ModuleTab(
-              label: 'Лиды и поставщики',
-              icon: Icons.group_add_outlined,
-              child: _buildLeadsAndSuppliers(salesState, companyState, isWide),
-            ),
-          ],
+          tabs: visibleTabs,
         );
       case 'docs':
+        final tabs = [
+          _ModuleTab(
+            id: 'operations',
+            label: 'Операции',
+            icon: Icons.swap_horiz,
+            child: _buildDocsForOperations(docState, salesState, companyState),
+          ),
+          _ModuleTab(
+            id: 'documents',
+            label: 'Документы',
+            icon: Icons.description_outlined,
+            child: _buildDocsCard(docState, companyState,
+                allowedTypes: const [DocumentType.act, DocumentType.contract]),
+          ),
+        ];
+        final visibleTabs = _filterTabsForPosition('docs', tabs, position);
+        if (visibleTabs.isEmpty) return _restrictedModuleNotice('Документация');
         return _ModuleShell(
           title: 'Документация',
-          tabs: [
-            _ModuleTab(
-              label: 'Операции',
-              icon: Icons.swap_horiz,
-              child: _buildDocsForOperations(docState, salesState, companyState),
-            ),
-            _ModuleTab(
-              label: 'Документы',
-              icon: Icons.description_outlined,
-              child: _buildDocsCard(docState, companyState,
-                  allowedTypes: const [DocumentType.act, DocumentType.contract]),
-            ),
-          ],
+          tabs: visibleTabs,
         );
       case 'pr_smm':
+        final tabs = [
+          _ModuleTab(
+            id: 'social',
+            label: 'Соцсети',
+            icon: Icons.share_outlined,
+            child: _buildPrSocial(prState, companyState),
+          ),
+          _ModuleTab(
+            id: 'communications',
+            label: 'Коммуникации',
+            icon: Icons.chat_bubble_outline,
+            child: _buildPrCommunication(prState, companyState),
+          ),
+        ];
+        final visibleTabs = _filterTabsForPosition('pr_smm', tabs, position);
+        if (visibleTabs.isEmpty) return _restrictedModuleNotice('PR / SMM');
         return _ModuleShell(
           title: 'PR / SMM',
-          tabs: [
-            _ModuleTab(
-              label: 'Соцсети',
-              icon: Icons.share_outlined,
-              child: _buildPrSocial(prState, companyState),
-            ),
-            _ModuleTab(
-              label: 'Коммуникации',
-              icon: Icons.chat_bubble_outline,
-              child: _buildPrCommunication(prState, companyState),
-            ),
-          ],
+          tabs: visibleTabs,
         );
       case 'finance':
+        final tabs = [
+          _ModuleTab(
+            id: 'employee',
+            label: 'Персонал',
+            icon: Icons.people_outline,
+            child: _buildAccountingCard(accountingState, companyState, targetType: 'employee'),
+          ),
+          _ModuleTab(
+            id: 'expense',
+            label: 'Операционные расходы',
+            icon: Icons.receipt_long_outlined,
+            child: _buildAccountingCard(accountingState, companyState, targetType: 'expense'),
+          ),
+        ];
+        final visibleTabs = _filterTabsForPosition('finance', tabs, position);
+        if (visibleTabs.isEmpty) return _restrictedModuleNotice('Бухгалтерия');
         return _ModuleShell(
           title: 'Бухгалтерия',
-          tabs: [
-            _ModuleTab(
-              label: 'Персонал',
-              icon: Icons.people_outline,
-              child: _buildAccountingCard(accountingState, companyState, targetType: 'employee'),
-            ),
-            _ModuleTab(
-              label: 'Операционные расходы',
-              icon: Icons.receipt_long_outlined,
-              child: _buildAccountingCard(accountingState, companyState, targetType: 'expense'),
-            ),
-          ],
+          tabs: visibleTabs,
         );
       case 'hr':
+        final tabs = [
+          _ModuleTab(
+            id: 'employees',
+            label: 'Сотрудники',
+            icon: Icons.badge_outlined,
+            child: _buildHrCard(companyState, currentEmployee),
+          ),
+        ];
+        final visibleTabs = _filterTabsForPosition('hr', tabs, position);
+        if (visibleTabs.isEmpty) return _restrictedModuleNotice('Управление персоналом');
         return _ModuleShell(
           title: 'Управление персоналом',
-          tabs: [
-            _ModuleTab(
-              label: 'Сотрудники',
-              icon: Icons.badge_outlined,
-              child: _buildHrCard(companyState),
-            ),
-          ],
+          tabs: visibleTabs,
         );
       default:
         return _buildOverviewTab(operationsState);
     }
+  }
+
+  List<_ModuleTab> _filterTabsForPosition(String moduleId, List<_ModuleTab> tabs, Position position) {
+    final allowedSubmodules = position.submodules[moduleId];
+    if (allowedSubmodules == null) return tabs;
+    if (allowedSubmodules.isEmpty) return [];
+    return tabs.where((tab) => allowedSubmodules.contains(tab.id)).toList();
+  }
+
+  Widget _restrictedModuleNotice(String moduleTitle) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text('Для модуля "$moduleTitle" у должности нет доступных подмодулей. Обратитесь к администратору.'),
+      ),
+    );
   }
 
   Widget _buildOverviewTab(OperationsState operationsState) {
@@ -1603,7 +1670,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildHrCard(CompanyState state) {
+  Widget _buildHrCard(CompanyState state, Employee currentEmployee) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1658,13 +1725,13 @@ class _HomePageState extends State<HomePage> {
                                 Row(
                                   children: [
                                     ElevatedButton.icon(
-                                      onPressed: () => _openChatWithEmployee(e),
+                                      onPressed: () => _openChatWithEmployee(e, currentEmployee),
                                       icon: const Icon(Icons.chat),
                                       label: const Text('Написать'),
                                     ),
                                     const SizedBox(width: 12),
                                     OutlinedButton.icon(
-                                      onPressed: () {},
+                                      onPressed: () => _openAssignTask(e, currentEmployee),
                                       icon: const Icon(Icons.task_alt),
                                       label: const Text('Поручить'),
                                     ),
@@ -1693,7 +1760,9 @@ class _HomePageState extends State<HomePage> {
     _accountingTargetType = targetType;
     final salesState = context.read<SalesCubit>().state;
     final isExpense = targetType == 'expense';
-    _accountingTargetId ??= isExpense ? companyState.company?.id : null;
+    if (isExpense) {
+      _accountingTargetId = companyState.company?.id;
+    }
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1703,22 +1772,36 @@ class _HomePageState extends State<HomePage> {
             const Text('Бухгалтерия', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             if (!isExpense)
-              DropdownButtonFormField<int>(
-                value: _accountingTargetId,
-                decoration: InputDecoration(
-                    labelText: _accountingTargetType == 'product' ? 'Товар' : 'Сотрудник'),
-                items: (_accountingTargetType == 'product' ? salesState.products : companyState.employees)
+              Builder(builder: (_) {
+                final targets = _accountingTargetType == 'product'
+                    ? salesState.products
+                    : companyState.employees;
+                final targetItems = targets
                     .map(
-                      (item) => DropdownMenuItem(
-                        value: _accountingTargetType == 'product' ? (item as Product).id : (item as Employee).id,
+                      (item) => DropdownMenuItem<int>(
+                        value: _accountingTargetType == 'product'
+                            ? (item as Product).id
+                            : (item as Employee).id,
                         child: Text(_accountingTargetType == 'product'
                             ? (item as Product).title
                             : (item as Employee).name),
                       ),
                     )
-                    .toList(),
-                onChanged: (value) => setState(() => _accountingTargetId = value),
-              )
+                    .toList();
+                final availableIds = targetItems.map((i) => i.value).whereType<int>().toSet();
+                if (_accountingTargetId != null && !availableIds.contains(_accountingTargetId)) {
+                  _accountingTargetId = targetItems.isNotEmpty ? targetItems.first.value : null;
+                } else if (_accountingTargetId == null && targetItems.isNotEmpty) {
+                  _accountingTargetId = targetItems.first.value;
+                }
+                return DropdownButtonFormField<int>(
+                  value: _accountingTargetId,
+                  decoration: InputDecoration(
+                      labelText: _accountingTargetType == 'product' ? 'Товар' : 'Сотрудник'),
+                  items: targetItems,
+                  onChanged: (value) => setState(() => _accountingTargetId = value),
+                );
+              })
             else
               const Text('Операционные расходы будут зафиксированы на компанию.'),
             const SizedBox(height: 8),
@@ -1802,7 +1885,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Color _moduleColorForIndex(int index) {
+  Color moduleColorForIndex(int index) {
     const palette = [
       Colors.blue,
       Colors.green,
@@ -2222,11 +2305,120 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _openChatWithEmployee(Employee employee) {
+  void _openChatWithEmployee(Employee employee, Employee currentEmployee) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _EmployeeChatPage(employee: employee),
+        builder: (_) => _EmployeeChatPage(
+          employee: employee,
+          currentEmployee: currentEmployee,
+          repository: _communicationRepository,
+        ),
       ),
+    );
+  }
+
+  void _openAssignTask(Employee employee, Employee currentEmployee) {
+    final taskController = TextEditingController();
+    String urgency = 'urgent';
+    DateTime? dueDate;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            left: 16,
+            right: 16,
+            top: 16,
+          ),
+          child: StatefulBuilder(
+            builder: (ctx, setModalState) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Новое поручение для ${employee.name}', style: Theme.of(ctx).textTheme.titleMedium),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: taskController,
+                    decoration: const InputDecoration(
+                      labelText: 'Текст поручения',
+                      prefixIcon: Icon(Icons.task_alt),
+                    ),
+                    minLines: 2,
+                    maxLines: 4,
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: urgency,
+                    decoration: const InputDecoration(
+                      labelText: 'Тип срочности',
+                      prefixIcon: Icon(Icons.flag_outlined),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'urgent', child: Text('Срочное')),
+                      DropdownMenuItem(value: 'scheduled', child: Text('С датой')),
+                    ],
+                    onChanged: (value) => setModalState(() => urgency = value ?? 'urgent'),
+                  ),
+                  if (urgency == 'scheduled') ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final now = DateTime.now();
+                        final picked = await showDateRangePicker(
+                          context: ctx,
+                          firstDate: now,
+                          lastDate: now.add(const Duration(days: 365)),
+                        );
+                        if (picked != null) {
+                          setModalState(() => dueDate = picked.end);
+                        }
+                      },
+                      icon: const Icon(Icons.date_range_outlined),
+                      label: Text(
+                        dueDate == null
+                            ? 'Выбрать сроки'
+                            : 'Срок: ${DateFormat('dd.MM.yyyy').format(dueDate!)}',
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final text = taskController.text.trim();
+                        if (text.isEmpty) return;
+                        if (urgency == 'scheduled' && dueDate == null) return;
+                        await _communicationRepository.sendMessage(
+                          senderId: currentEmployee.id,
+                          receiverId: employee.id,
+                          text: text,
+                          kind: EmployeeMessageKind.task,
+                          urgency: urgency,
+                          dueDate: dueDate,
+                        );
+                        if (mounted) {
+                          Navigator.of(ctx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Поручение сохранено')),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.send),
+                      label: const Text('Отправить поручение'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
@@ -2324,11 +2516,12 @@ class _ModulesOverview extends StatelessWidget {
 }
 
 class _ModuleTab {
+  final String id;
   final String label;
   final IconData icon;
   final Widget child;
 
-  const _ModuleTab({required this.label, required this.icon, required this.child});
+  const _ModuleTab({required this.id, required this.label, required this.icon, required this.child});
 }
 
 class _ModuleShell extends StatelessWidget {
@@ -2507,8 +2700,14 @@ class _EmployeeDetailsPage extends StatelessWidget {
 
 class _EmployeeChatPage extends StatefulWidget {
   final Employee employee;
+  final Employee currentEmployee;
+  final EmployeeCommunicationRepository repository;
 
-  const _EmployeeChatPage({required this.employee});
+  const _EmployeeChatPage({
+    required this.employee,
+    required this.currentEmployee,
+    required this.repository,
+  });
 
   @override
   State<_EmployeeChatPage> createState() => _EmployeeChatPageState();
@@ -2516,7 +2715,9 @@ class _EmployeeChatPage extends StatefulWidget {
 
 class _EmployeeChatPageState extends State<_EmployeeChatPage> {
   final _messageController = TextEditingController();
-  final List<String> _messages = [];
+  final List<EmployeeMessage> _messages = [];
+  bool _loading = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -2524,12 +2725,52 @@ class _EmployeeChatPageState extends State<_EmployeeChatPage> {
     super.dispose();
   }
 
+  @override
+  void initState() {
+    super.initState();
+    _loadMessages();
+  }
+
+  Future<void> _loadMessages() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final msgs = await widget.repository.fetchConversation(
+        widget.currentEmployee.id,
+        widget.employee.id,
+      );
+      setState(() {
+        _messages
+          ..clear()
+          ..addAll(msgs);
+      });
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   void _sendMessage() {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
-    setState(() {
-      _messages.add(text);
-      _messageController.clear();
+    widget.repository
+        .sendMessage(
+          senderId: widget.currentEmployee.id,
+          receiverId: widget.employee.id,
+          text: text,
+          kind: EmployeeMessageKind.message,
+        )
+        .then((message) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(message);
+        _messageController.clear();
+      });
+    }).catchError((e) {
+      setState(() => _error = e.toString());
     });
   }
 
@@ -2540,27 +2781,64 @@ class _EmployeeChatPageState extends State<_EmployeeChatPage> {
       body: Column(
         children: [
           Expanded(
-            child: _messages.isEmpty
-                ? const Center(child: Text('Нет сообщений'))
-                : ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _messages.length,
-                    itemBuilder: (context, index) {
-                      final message = _messages[index];
-                      return Align(
-                        alignment: Alignment.centerRight,
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 4),
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(message),
-                        ),
-                      );
-                    },
-                  ),
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _messages.isEmpty
+                    ? Center(child: Text(_error ?? 'Нет сообщений'))
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) {
+                          final message = _messages[index];
+                          final isMine = message.senderId == widget.currentEmployee.id;
+                          return Align(
+                            alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 4),
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: isMine
+                                    ? Theme.of(context).colorScheme.primary.withOpacity(0.12)
+                                    : Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (message.kind == EmployeeMessageKind.task)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.task_alt, size: 16),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            message.urgency == 'urgent'
+                                                ? 'Срочное поручение'
+                                                : 'Поручение со сроком',
+                                            style: Theme.of(context).textTheme.bodySmall,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  Text(message.text),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    DateFormat('dd.MM.yyyy HH:mm').format(message.createdAt),
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                  if (message.kind == EmployeeMessageKind.task && message.dueDate != null)
+                                    Text(
+                                      'Срок: ${DateFormat('dd.MM.yyyy').format(message.dueDate!)}',
+                                      style: Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
           ),
           const Divider(height: 1),
           Padding(

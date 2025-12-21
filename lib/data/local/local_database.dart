@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -23,7 +25,7 @@ class LocalDatabase {
     final path = join(docsDir.path, 'mi_crm.db');
     return openDatabase(
       path,
-      version: 7,
+      version: 10,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE users (
@@ -84,6 +86,40 @@ class LocalDatabase {
           final hasIsHead = columns.any((row) => row['name'] == 'is_head');
           if (!hasIsHead) {
             await db.execute('ALTER TABLE positions ADD COLUMN is_head INTEGER DEFAULT 0;');
+          }
+        }
+        if (oldVersion < 8) {
+          final columns = await db.rawQuery('PRAGMA table_info(positions);');
+          final hasSubmodules = columns.any((row) => row['name'] == 'submodules');
+          if (!hasSubmodules) {
+            await db.execute('ALTER TABLE positions ADD COLUMN submodules TEXT;');
+          }
+        }
+        if (oldVersion < 9) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS employee_messages (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sender_id INTEGER,
+              receiver_id INTEGER,
+              text TEXT,
+              kind TEXT,
+              urgency TEXT,
+              due_date INTEGER,
+              status TEXT,
+              comment TEXT,
+              created_at INTEGER
+            );
+          ''');
+        }
+        if (oldVersion < 10) {
+          final columns = await db.rawQuery('PRAGMA table_info(employee_messages);');
+          final hasStatus = columns.any((row) => row['name'] == 'status');
+          if (!hasStatus) {
+            await db.execute("ALTER TABLE employee_messages ADD COLUMN status TEXT DEFAULT 'open';");
+          }
+          final hasComment = columns.any((row) => row['name'] == 'comment');
+          if (!hasComment) {
+            await db.execute('ALTER TABLE employee_messages ADD COLUMN comment TEXT;');
           }
         }
       },
@@ -171,7 +207,8 @@ class LocalDatabase {
         company_id INTEGER,
         title TEXT,
         modules TEXT,
-        is_head INTEGER DEFAULT 0
+        is_head INTEGER DEFAULT 0,
+        submodules TEXT
       );
     ''');
 
@@ -194,6 +231,21 @@ class LocalDatabase {
         status TEXT,
         department_id INTEGER,
         user_id INTEGER
+      );
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS employee_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id INTEGER,
+        receiver_id INTEGER,
+        text TEXT,
+        kind TEXT,
+        urgency TEXT,
+        due_date INTEGER,
+        status TEXT,
+        comment TEXT,
+        created_at INTEGER
       );
     ''');
 
@@ -328,6 +380,7 @@ class LocalDatabase {
     required String title,
     required List<String> modules,
     bool isHead = false,
+    Map<String, List<String>> submodules = const {},
   }) async {
     final db = await database;
     return db.insert('positions', {
@@ -335,6 +388,7 @@ class LocalDatabase {
       'title': title,
       'modules': modules.join(','),
       'is_head': isHead ? 1 : 0,
+      'submodules': jsonEncode(submodules),
     });
   }
 
@@ -343,6 +397,7 @@ class LocalDatabase {
     required String title,
     required List<String> modules,
     required bool isHead,
+    Map<String, List<String>> submodules = const {},
   }) async {
     final db = await database;
     await db.update(
@@ -351,10 +406,67 @@ class LocalDatabase {
         'title': title,
         'modules': modules.join(','),
         'is_head': isHead ? 1 : 0,
+        'submodules': jsonEncode(submodules),
       },
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  Future<int> addEmployeeMessage({
+    required int senderId,
+    required int receiverId,
+    required String text,
+    required String kind,
+    String? urgency,
+    DateTime? dueDate,
+    String status = 'open',
+    String? comment,
+  }) async {
+    final db = await database;
+    return db.insert('employee_messages', {
+      'sender_id': senderId,
+      'receiver_id': receiverId,
+      'text': text,
+      'kind': kind,
+      'urgency': urgency,
+      'due_date': dueDate?.millisecondsSinceEpoch,
+      'status': status,
+      'comment': comment,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> fetchEmployeeMessages({
+    required int employeeAId,
+    required int employeeBId,
+  }) async {
+    final db = await database;
+    return db.query(
+      'employee_messages',
+      where: '(sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)',
+      whereArgs: [employeeAId, employeeBId, employeeBId, employeeAId],
+      orderBy: 'created_at ASC',
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> fetchEmployeeTasks(List<int> receiverIds) async {
+    final db = await database;
+    if (receiverIds.isEmpty) return [];
+    final placeholders = List.filled(receiverIds.length, '?').join(',');
+    return db.rawQuery(
+      'SELECT * FROM employee_messages WHERE kind = ? AND receiver_id IN ($placeholders) ORDER BY created_at DESC',
+      ['task', ...receiverIds],
+    );
+  }
+
+  Future<void> updateEmployeeMessage({required int taskId, String? status, String? comment}) async {
+    final db = await database;
+    final data = <String, Object?>{};
+    if (status != null) data['status'] = status;
+    if (comment != null) data['comment'] = comment;
+    if (data.isEmpty) return;
+    await db.update('employee_messages', data, where: 'id = ?', whereArgs: [taskId]);
   }
 
   Future<List<Map<String, dynamic>>> fetchPositions(int companyId) async {

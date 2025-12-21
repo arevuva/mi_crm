@@ -47,9 +47,23 @@ class CompanyRepository {
     required String title,
     required List<String> modules,
     bool isHead = false,
+    Map<String, List<String>> submodules = const {},
   }) async {
-    final id = await _db.addPosition(companyId: companyId, title: title, modules: modules, isHead: isHead);
-    return Position(id: id, companyId: companyId, title: title, modules: modules, isHead: isHead);
+    final id = await _db.addPosition(
+      companyId: companyId,
+      title: title,
+      modules: modules,
+      isHead: isHead,
+      submodules: submodules,
+    );
+    return Position(
+      id: id,
+      companyId: companyId,
+      title: title,
+      modules: modules,
+      isHead: isHead,
+      submodules: submodules,
+    );
   }
 
   Future<void> updatePosition(Position position) async {
@@ -58,6 +72,7 @@ class CompanyRepository {
       title: position.title,
       modules: position.modules,
       isHead: position.isHead,
+      submodules: position.submodules,
     );
   }
 

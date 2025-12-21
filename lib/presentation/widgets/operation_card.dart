@@ -18,13 +18,17 @@ class OperationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cardColor = theme.cardColor;
+    final textColor = theme.textTheme.bodyMedium?.color;
+    final mutedColor = theme.textTheme.bodySmall?.color ?? Colors.grey;
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: Colors.black.withOpacity(theme.brightness == Brightness.dark ? 0.2 : 0.06),
             blurRadius: 8,
             offset: const Offset(0, 2),
           )
@@ -43,11 +47,11 @@ class OperationCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: textColor)),
                 const SizedBox(height: 4),
-                Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
+                Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodyMedium),
                 const SizedBox(height: 4),
-                Text(timestamp, style: const TextStyle(color: Colors.grey)),
+                Text(timestamp, style: theme.textTheme.bodySmall?.copyWith(color: mutedColor)),
               ],
             ),
           ),

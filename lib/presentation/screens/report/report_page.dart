@@ -485,38 +485,35 @@ class _ModuleReportPageState extends State<_ModuleReportPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        Wrap(
+                          alignment: WrapAlignment.spaceBetween,
+                          spacing: 12,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             const Text('Документы',
                                 style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
-                            Row(
-                              children: [
-                                DropdownButton<DocumentType?>(
-                                  value: _docTypeFilter,
-                                  hint: const Text('Все типы'),
-                                  onChanged: (value) => setState(() => _docTypeFilter = value),
-                                  items: [
-                                    const DropdownMenuItem<DocumentType?>(
-                                        value: null, child: Text('Все')),
-                                    ...DocumentType.values.map(
-                                      (t) => DropdownMenuItem(
-                                        value: t,
-                                        child: Text(_docLabel(t)),
-                                      ),
-                                    ),
-                                  ],
+                            DropdownButton<DocumentType?>(
+                              value: _docTypeFilter,
+                              hint: const Text('Все типы'),
+                              onChanged: (value) => setState(() => _docTypeFilter = value),
+                              items: [
+                                const DropdownMenuItem<DocumentType?>(
+                                    value: null, child: Text('Все')),
+                                ...DocumentType.values.map(
+                                  (t) => DropdownMenuItem(
+                                    value: t,
+                                    child: Text(_docLabel(t)),
+                                  ),
                                 ),
-                                const SizedBox(width: 8),
-                                DropdownButton<bool>(
-                                  value: _docSortDesc,
-                                  onChanged: (value) =>
-                                      setState(() => _docSortDesc = value ?? true),
-                                  items: const [
-                                    DropdownMenuItem(value: true, child: Text('Сначала новые')),
-                                    DropdownMenuItem(value: false, child: Text('Сначала старые')),
-                                  ],
-                                ),
+                              ],
+                            ),
+                            DropdownButton<bool>(
+                              value: _docSortDesc,
+                              onChanged: (value) => setState(() => _docSortDesc = value ?? true),
+                              items: const [
+                                DropdownMenuItem(value: true, child: Text('Сначала новые')),
+                                DropdownMenuItem(value: false, child: Text('Сначала старые')),
                               ],
                             ),
                           ],

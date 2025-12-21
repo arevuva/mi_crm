@@ -1829,12 +1829,13 @@ class _HomePageState extends State<HomePage> {
             ),
             if (state.entries.isNotEmpty) ...[
               const Divider(height: 24),
-              ...state.entries.take(3).map(
-                    (e) => ListTile(
-                      leading: const Icon(Icons.receipt_long_outlined),
-                      title: Text('${e.targetType}: ${e.delta}'),
-                      subtitle: Text(e.note),
-                      trailing: Text(DateFormat('dd.MM').format(e.createdAt)),
+              if (isExpense)
+                ...state.entries.take(3).map(
+                  (e) => ListTile(
+                    leading: const Icon(Icons.receipt_long_outlined),
+                    title: Text('${e.targetType}: ${e.delta}'),
+                    subtitle: Text(e.note),
+                    trailing: Text(DateFormat('dd.MM').format(e.createdAt)),
                     ),
                   ),
             ],

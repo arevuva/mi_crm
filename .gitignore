@@ -1,1 +1,59 @@
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+flutter_*.png
+linked_*.ds
 
+# Android related
+**/android/**/gradle-wrapper.jar
+**/android/.gradle
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/local.properties
+**/android/*.iml
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+
+# iOS/Xcode related
+**/ios/Pods
+**/ios/.symlinks
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/Runner/GeneratedPluginRegistrant.*
+
+# macOS
+**/macos/Flutter/GeneratedPluginRegistrant.*
+**/macos/Pods
+
+# Web
+lib/generated_plugin_registrant.dart
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code related
+.vscode/
+
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+Thumbs.db
+
+# Flutter desktop ephemeral files
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
+windows/runner/Debug/
+windows/runner/Release/

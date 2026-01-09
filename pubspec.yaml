@@ -1,0 +1,24 @@
+name: mi_crm
+description: Простое CRM-приложение с авторизацией, отчетами и управлением операциями.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  flutter_bloc: ^8.1.3
+  equatable: ^2.0.5
+  sqflite: ^2.3.3
+  sqflite_common_ffi: ^2.3.4
+  path_provider: ^2.1.3
+  path: ^1.9.0
+  shared_preferences: ^2.2.3
+  intl: ^0.19.0
+
+flutter:
+  uses-material-design: true
+
